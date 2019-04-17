@@ -20,5 +20,6 @@ bin-release/
 # ignore 
 images/
 saved_models/
+__pycache__/
 
 
