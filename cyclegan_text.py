@@ -57,6 +57,7 @@ opt.img_width = 256
 opt.batch_test_size = 5
 opt.p_color_augment = 0 # 0.25
 opt.AMS_grad = False
+opt.use_GT = True
 #opt.lr= 0.000002
 #opt.b1 = 0.9
 # opt.b2 = 
@@ -127,7 +128,7 @@ def get_loaders():
     dataloader = DataLoader(ImageDataset("../data/%s" % opt.dataset_name, 
                            transform=transforms_gan,                            
                            unaligned=False, 
-                           gt=False,
+                           gt=opt.use_GT,
                            p_color_augment= opt.p_color_augment
                            ), 
                     batch_size=opt.batch_size, 
@@ -136,7 +137,7 @@ def get_loaders():
     val_dataloader = DataLoader(ImageDataset("../data/%s" % opt.dataset_name, 
                             transform = transforms_val,                           
                             unaligned=False, mode='test', 
-                            gt=False
+                            gt=opt.use_GT
                             ),
                             batch_size=opt.batch_test_size, 
                             shuffle=True, 
