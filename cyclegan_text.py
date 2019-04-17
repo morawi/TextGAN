@@ -48,6 +48,7 @@ parser.add_argument('--channels', type=int, default=3, help='number of image cha
 parser.add_argument('--sample_interval', type=int, default=100, help='interval between sampling images from generators')
 parser.add_argument('--checkpoint_interval', type=int, default=-1, help='interval between saving model checkpoints')
 parser.add_argument('--n_residual_blocks', type=int, default=9, help='number of residual blocks in generator')
+parser.add_argument('--test_interval', type=int, default=11, help='interval to calculate overall testing performance via L1')
 
 opt = parser.parse_args()
 
@@ -56,41 +57,21 @@ opt.img_height = 256
 opt.img_width = 256
 opt.batch_test_size = 5
 opt.p_color_augment = 0 # 0.25
-opt.AMS_grad = False
+opt.AMS_grad = True
 opt.use_GT = True
+opt.show_progress_every_n_iterations= 20
 #opt.lr= 0.000002
 #opt.b1 = 0.9
 # opt.b2 = 
-opt.decay_epoch = 1
-opt.n_epochs = 2
+# opt.decay_epoch = 1
+# opt.n_epochs = 2
 # opt.decay_epoch =  100
 # opt.checkpoint_interval = 10
 
-generate_all_test= False
+generate_all_test_images= False
 
 print(opt)
 
-
-class NoneTransform(object):
-    """ Does nothing to the image, to be used instead of None    
-    Args:
-        image in, image out, nothing is done
-    """
-        
-    def __call__(self, image):       
-        return image
-
-class Invert_B_img(object):
-    """ Does nothing to the image, to be used instead of None    
-    Args:
-        image in, image out, nothing is done
-    """
-        
-    def __call__(self, image):                         
-        image = image.point(lambda p: 255-p if p>8 and p<64 else 0 ) # invert         
-#        
-        
-        return image
 
 
 def random_seeding(seed_value, state, cuda_rng_state):    
@@ -133,10 +114,13 @@ def get_loaders():
                            transform=transforms_gan,                            
                            unaligned=False, 
                            gt=opt.use_GT,
-                           p_color_augment= opt.p_color_augment
+                           p_color_augment= opt.p_color_augment,
+                           p_RGB2BGR_augment=0.66, 
+                           p_invert_augment=0.66
                            ), 
                     batch_size=opt.batch_size, 
-                    shuffle=True,  num_workers=opt.n_cpu)
+                    shuffle=True,  
+                    num_workers=opt.n_cpu)
     
     val_dataloader = DataLoader(ImageDataset("../data/%s" % opt.dataset_name, 
                             transform = transforms_val,                           
@@ -145,8 +129,7 @@ def get_loaders():
                             ),
                             batch_size=opt.batch_test_size, 
                             shuffle=True, 
-                            num_workers=0,
-                            worker_init_fn = torch.initial_seed
+                            num_workers=1                            
                             )
     
     return dataloader, val_dataloader
@@ -280,8 +263,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
         # Set model input
         real_A = Variable(batch['A'].type(Tensor))
         real_B = Variable(batch['B'].type(Tensor))
-        print('A shape', real_A.shape, 'B shape', real_B.shape, '\n')
-
+        
         # Adversarial ground truths
         valid = Variable(Tensor(np.ones((real_A.size(0), *patch))), requires_grad=False)
         fake = Variable(Tensor(np.zeros((real_A.size(0), *patch))), requires_grad=False)
@@ -369,13 +351,14 @@ for epoch in range(opt.epoch, opt.n_epochs):
         prev_time = time.time()
 
         # Print log
-        sys.stdout.write("\r[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f, adv: %f, cycle: %f, identity: %f] ETA: %s" %
-                                                        (epoch, opt.n_epochs,
-                                                        i, len(dataloader),
-                                                        loss_D.item(), loss_G.item(),
-                                                        loss_GAN.item(), loss_cycle.item(),
-                                                        loss_identity.item(), time_left))
-
+        if not i % opt.show_progress_every_n_iterations:
+            sys.stdout.write("\r[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f, adv: %f, cycle: %f, identity: %f] ETA(time-left): %s" %
+                                                            (epoch, opt.n_epochs,
+                                                            i, len(dataloader),
+                                                            loss_D.item(), loss_G.item(),
+                                                            loss_GAN.item(), loss_cycle.item(),
+                                                            loss_identity.item(), time_left))
+            
         # If at sample interval save image
         if batches_done % opt.sample_interval == 0:            
             sample_images(next(iter(val_dataloader)), batches_done, use_max=True) # another instance
@@ -392,9 +375,11 @@ for epoch in range(opt.epoch, opt.n_epochs):
         torch.save(G_BA.state_dict(), 'saved_models/%s/G_BA_%d.pth' % (opt.dataset_name, epoch))
         torch.save(D_A.state_dict(), 'saved_models/%s/D_A_%d.pth' % (opt.dataset_name, epoch))
         torch.save(D_B.state_dict(), 'saved_models/%s/D_B_%d.pth' % (opt.dataset_name, epoch))
-
-overall_loss()
-if generate_all_test:
+    if not epoch % opt.test_interval:
+        overall_loss()
+        
+overall_loss(use_max=True)
+if generate_all_test_images:
     for batch_idx, imgs in enumerate(val_dataloader):
         sample_images(imgs, batch_idx, use_max=True) # another instance
     
