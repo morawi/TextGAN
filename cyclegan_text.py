@@ -163,8 +163,7 @@ def overall_loss(use_max=False):
     ''' Calculates the overall identitiy loss of the test set '''
     loss_id_B = 0; loss_id_B_max=0
     with torch.no_grad():
-        for batch_idx, imgs in enumerate(val_dataloader):
-            print(batch_idx)
+        for batch_idx, imgs in enumerate(val_dataloader):            
             real_A_pos = imgs['A'].type(Tensor)
             fake_B_pos = G_AB(real_A_pos) 
             real_B_pos = imgs['B'].type(Tensor)       
