@@ -61,9 +61,13 @@ opt.use_GT = True
 #opt.lr= 0.000002
 #opt.b1 = 0.9
 # opt.b2 = 
-# opt.n_epochs = 200
+opt.decay_epoch = 1
+opt.n_epochs = 2
 # opt.decay_epoch =  100
 # opt.checkpoint_interval = 10
+
+generate_all_test= False
+
 print(opt)
 
 
@@ -170,9 +174,29 @@ def sample_images(imgs, batches_done, use_max=False):
                             real_A_neg.data, fake_B_neg.data), 0)
         save_image(img_sample, 'images/%s/%s_max.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
     
+
+
+def overall_loss(use_max=False):
+    ''' Calculates the overall identitiy loss of the test set '''
+    loss_id_B = 0; loss_id_B_max=0
+    with torch.no_grad():
+        for batch_idx, imgs in enumerate(val_dataloader):
+            print(batch_idx)
+            real_A_pos = imgs['A'].type(Tensor)
+            fake_B_pos = G_AB(real_A_pos) 
+            real_B_pos = imgs['B'].type(Tensor)       
+            loss_id_B += criterion_identity_testing(fake_B_pos, real_B_pos)
+            
+            if use_max:
+                real_A_neg = imgs['A_neg'].type(Tensor)
+                fake_B_neg = G_AB(real_A_neg)             
+                for i in range(len(fake_B_pos)):
+                    fake_B_neg.data[i] = torch.max(fake_B_pos.data[i], fake_B_neg.data[i]) # the max is stored in neg, nothing biggi
+                
+                loss_id_B_max += criterion_identity_testing(fake_B_neg, real_B_pos) # between max and neg
+    print('identity N1 loss over all testing samples', loss_id_B/len(val_dataloader.dataset))
+    if use_max: print('max(neg, pos) identity N1 loss over all testing samples', loss_id_B_max/len(val_dataloader.dataset))
     
-
-
 
 
 ''''''''''''' Main Program'''''''''''''''''''
@@ -187,6 +211,7 @@ os.makedirs('saved_models/%s' % opt.dataset_name, exist_ok=True)
 criterion_GAN = torch.nn.MSELoss()
 criterion_cycle = torch.nn.L1Loss()
 criterion_identity = torch.nn.L1Loss()
+criterion_identity_testing = torch.nn.L1Loss()
 
 # Calculate output of image discriminator (PatchGAN)
 patch = (1, opt.img_height // 2**4, opt.img_width // 2**4)
@@ -368,8 +393,10 @@ for epoch in range(opt.epoch, opt.n_epochs):
         torch.save(D_A.state_dict(), 'saved_models/%s/D_A_%d.pth' % (opt.dataset_name, epoch))
         torch.save(D_B.state_dict(), 'saved_models/%s/D_B_%d.pth' % (opt.dataset_name, epoch))
 
-
-for batch_idx, imgs in enumerate(val_dataloader):
-    sample_images(imgs, batch_idx, use_max=True) # another instance
+overall_loss()
+if generate_all_test:
+    for batch_idx, imgs in enumerate(val_dataloader):
+        sample_images(imgs, batch_idx, use_max=True) # another instance
+    
     
     
