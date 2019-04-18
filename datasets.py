@@ -9,12 +9,12 @@ import torchvision.transforms as transforms
 import numpy as np
 import cv2
 
-def color_mapping(img, Cr, Cg, Cb, ignor_zeros=False):
+def color_mapping(img, Cr, Cg, Cb, ignor_zeros=True):
     #  option is to use pallet, imageWithColorPalette = colorImage.convert("P", palette=Image.ADAPTIVE, colors=8)
     # or, option to use this conversion https://realpython.com/python-opencv-color-spaces/
     
     # img.show()
-    max_V= 128
+    max_V= 256
     red, green, blue = img.split()    
     if not ignor_zeros:
         red = red.point(lambda p: (p+Cr)%max_V) # when Cr=0, this will give the negative(invert/complement) image    
@@ -78,16 +78,21 @@ class ImageDataset(Dataset):
         
         
         if self.mode == 'train':
-            if np.random.rand()<self.p_color_augment:
-                Cr, Cg, Cb = np.random.randint(0, 256, 3) # One coeff for each band, we will used one coeff for all            
+            if np.random.rand() < self.p_RGB2BGR_augment: # will not run when p_RGB2BGR_augment=0
+                item_A = color_mapping_cv2(item_A)
+                item_B = color_mapping_cv2(item_B)                            
+            elif np.random.rand() < self.p_color_augment: # will not run when p_color_augment=0
+                # Cr, Cg, Cb = np.random.randint(0, 256, 3) # One coeff for each band, we will used one coeff for all            
+               
+                Cr, Cg, Cb = (32, 32, 32)  # middle point inversion
                 item_A = color_mapping(item_A, Cr, Cg, Cb)
                 item_B = color_mapping(item_B, Cr, Cg, Cb, ignor_zeros=True)                
-            elif np.random.rand()>self.p_RGB2BGR_augment:
-                item_A = color_mapping_cv2(item_A)
-                item_B = color_mapping_cv2(item_B)                
-            elif np.random.rand()>self.p_invert_augment:
+                
+            elif np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
                 item_A = PIL_invert(item_A)                
                 item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                
+            else: 
+                'keep image as is'
                                     
         item_A_neg = self.transform(PIL_invert(item_A)) # this will only be used in validation        
         item_B = self.transform(item_B)
