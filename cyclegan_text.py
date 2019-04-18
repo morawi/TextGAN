@@ -53,22 +53,26 @@ parser.add_argument('--test_interval', type=int, default=11, help='interval to c
 opt = parser.parse_args()
 
 opt.dataset_name = 'text_segmentation'# 'synthtext'
-opt.img_height = 256
-opt.img_width = 256
+opt.show_progress_every_n_iterations= 20  
 opt.batch_test_size = 5
-opt.p_color_augment = 0 # 0.25
 opt.AMS_grad = True
 opt.use_GT = True
-opt.show_progress_every_n_iterations= 20
+opt.sample_interval = 1000
+
+# using .25 p ensures having .25 of the data unchanged during training
+opt.p_RGB2BGR_augment = 0.33 # .25 # 0 indicates no change to the 
+opt.p_invert_augment = 0.33# .25
+opt.p_color_augment = 0 #.25 # 0.25
+
+
 #opt.lr= 0.000002
 #opt.b1 = 0.9
 # opt.b2 = 
-# opt.decay_epoch = 1
-# opt.n_epochs = 2
-# opt.decay_epoch =  100
-# opt.checkpoint_interval = 10
 
-generate_all_test_images= False
+# opt.n_epochs = 2
+
+opt.checkpoint_interval = 500
+generate_all_test_images = True
 
 print(opt)
 
@@ -115,8 +119,8 @@ def get_loaders():
                            unaligned=False, 
                            gt=opt.use_GT,
                            p_color_augment= opt.p_color_augment,
-                           p_RGB2BGR_augment=0.66, 
-                           p_invert_augment=0.66
+                           p_RGB2BGR_augment= opt.p_RGB2BGR_augment, 
+                           p_invert_augment=opt.p_invert_augment
                            ), 
                     batch_size=opt.batch_size, 
                     shuffle=True,  
@@ -159,7 +163,7 @@ def sample_images(imgs, batches_done, use_max=False):
     
 
 
-def overall_loss(use_max=False):
+def overall_test_time_performance(use_max=False):
     ''' Calculates the overall identitiy loss of the test set '''
     loss_id_B = 0; loss_id_B_max=0
     with torch.no_grad():
@@ -176,8 +180,8 @@ def overall_loss(use_max=False):
                     fake_B_neg.data[i] = torch.max(fake_B_pos.data[i], fake_B_neg.data[i]) # the max is stored in neg, nothing biggi
                 
                 loss_id_B_max += criterion_identity_testing(fake_B_neg, real_B_pos) # between max and neg
-    print('identity N1 loss over all testing samples', loss_id_B/len(val_dataloader.dataset))
-    if use_max: print('max(neg, pos) identity N1 loss over all testing samples', loss_id_B_max/len(val_dataloader.dataset))
+    print('\n Identity L1 evaluation all testing samples', loss_id_B/len(val_dataloader.dataset))
+    if use_max: print('max(neg, pos) identity L1 evaluation all testing samples', loss_id_B_max/len(val_dataloader.dataset))
     
 
 
@@ -375,9 +379,9 @@ for epoch in range(opt.epoch, opt.n_epochs):
         torch.save(D_A.state_dict(), 'saved_models/%s/D_A_%d.pth' % (opt.dataset_name, epoch))
         torch.save(D_B.state_dict(), 'saved_models/%s/D_B_%d.pth' % (opt.dataset_name, epoch))
     if not epoch % opt.test_interval:
-        overall_loss()
+        overall_test_time_performance(use_max=True)
         
-overall_loss(use_max=True)
+overall_test_time_performance(use_max=True)
 if generate_all_test_images:
     for batch_idx, imgs in enumerate(val_dataloader):
         sample_images(imgs, batch_idx, use_max=True) # another instance
