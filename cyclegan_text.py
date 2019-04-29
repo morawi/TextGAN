@@ -56,11 +56,12 @@ opt.dataset_name = 'text_segmentation'# 'synthtext'
 opt.show_progress_every_n_iterations= 20  
 opt.batch_test_size = 5
 opt.AMS_grad = True
-opt.use_GT = True
+opt.use_GT = False
 opt.sample_interval = 1000
+opt.test_interval = 50
 
 # using .25 p ensures having .25 of the data unchanged during training
-opt.p_RGB2BGR_augment = 0.33 # .25 # 0 indicates no change to the 
+opt.p_RGB2BGR_augment = 0 # .25 # 0 indicates no change to the 
 opt.p_invert_augment = 0.33# .25
 opt.p_color_augment = 0 #.25 # 0.25
 
@@ -69,8 +70,8 @@ opt.p_color_augment = 0 #.25 # 0.25
 #opt.b1 = 0.9
 # opt.b2 = 
 
-# opt.n_epochs = 2
-
+opt.n_epochs = 1
+opt.decay_epoch=0
 opt.checkpoint_interval = 500
 generate_all_test_images = True
 
@@ -160,7 +161,6 @@ def sample_images(imgs, batches_done, use_max=False):
         img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
                             real_A_neg.data, fake_B_neg.data), 0)
         save_image(img_sample, 'images/%s/%s_max.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
-    
 
 
 def overall_test_time_performance(use_max=False):
@@ -177,7 +177,10 @@ def overall_test_time_performance(use_max=False):
                 real_A_neg = imgs['A_neg'].type(Tensor)
                 fake_B_neg = G_AB(real_A_neg)             
                 for i in range(len(fake_B_pos)):
-                    fake_B_neg.data[i] = torch.max(fake_B_pos.data[i], fake_B_neg.data[i]) # the max is stored in neg, nothing biggi
+                    s_pos = fake_B_pos.data[i].sum()
+                    s_neg = fake_B_neg.data[i].sum()
+                    if s_pos>s_neg:
+                        fake_B_neg.data[i] = fake_B_pos.data[i]
                 
                 loss_id_B_max += criterion_identity_testing(fake_B_neg, real_B_pos) # between max and neg
     print('\n Identity L1 evaluation all testing samples', loss_id_B/len(val_dataloader.dataset))
