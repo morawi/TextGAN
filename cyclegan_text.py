@@ -180,7 +180,7 @@ def overall_test_time_performance(use_max=False):
                     s_pos = fake_B_pos.data[i].sum()
                     s_neg = fake_B_neg.data[i].sum()
                     if s_pos>s_neg:
-                        fake_B_neg.data[i] = fake_B_pos.data[i]
+                        fake_B_neg.data[i] = fake_B_pos.data[i] 
                 
                 loss_id_B_max += criterion_identity_testing(fake_B_neg, real_B_pos) # between max and neg
     print('\n Identity L1 evaluation all testing samples', loss_id_B/len(val_dataloader.dataset))

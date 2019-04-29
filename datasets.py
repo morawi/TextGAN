@@ -75,30 +75,19 @@ class ImageDataset(Dataset):
         else:
             item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image
         
-        
-        
         if self.mode == 'train':
             if np.random.rand() < self.p_RGB2BGR_augment: # will not run when p_RGB2BGR_augment=0
                 item_A = color_mapping_cv2(item_A)
                 item_B = color_mapping_cv2(item_B)                            
-            elif np.random.rand() < self.p_color_augment: # will not run when p_color_augment=0
-                # Cr, Cg, Cb = np.random.randint(0, 256, 3) # One coeff for each band, we will used one coeff for all            
-               
-                Cr, Cg, Cb = (32, 32, 32)  # middle point inversion
-                item_A = color_mapping(item_A, Cr, Cg, Cb)
-                item_B = color_mapping(item_B, Cr, Cg, Cb, ignor_zeros=True)                
-                
+                            
             elif np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
                 item_A = PIL_invert(item_A)                
                 item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                
-            else: 
-                'keep image as is'
+            
                                     
         item_A_neg = self.transform(PIL_invert(item_A)) # this will only be used in validation        
         item_B = self.transform(item_B)
         item_A = self.transform(item_A)
-        
-        
         
         return {'A': item_A, 
                 'A_neg': item_A_neg,
@@ -109,7 +98,14 @@ class ImageDataset(Dataset):
 
 
 
-
+#elif np.random.rand() < self.p_color_augment: # will not run when p_color_augment=0
+#                # Cr, Cg, Cb = np.random.randint(0, 256, 3) # One coeff for each band, we will used one coeff for all            
+#               
+#                Cr, Cg, Cb = (32, 32, 32)  # middle point inversion
+#                item_A = color_mapping(item_A, Cr, Cg, Cb)
+#                item_B = color_mapping(item_B, Cr, Cg, Cb, ignor_zeros=True)                
+#
+#
 #class NoneTransform(object):
 #    """ Does nothing to the image, to be used instead of None    
 #    Args:
