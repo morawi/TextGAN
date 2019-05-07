@@ -44,7 +44,7 @@ def color_mapping_cv2(img):
 
 
 class ImageDataset(Dataset):
-    def __init__(self, root, transform=None, unaligned=False, mode='train', 
+    def __init__(self, root, transform=None, aligned=True, mode='train', 
                  gt=False, p_color_augment=0, p_RGB2BGR_augment=0, p_invert_augment=0):
         '''Args-
         gt=True, loads the white Ground Truth pixel level text, if False, use the colored  
@@ -54,7 +54,7 @@ class ImageDataset(Dataset):
         '''
         self.transform = transforms.Compose(transform)
         self.mode = mode
-        self.unaligned = unaligned
+        self.aligned = aligned
         self.p_color_augment = p_color_augment
         self.p_RGB2BGR_augment = p_RGB2BGR_augment
         self.p_invert_augment = p_invert_augment
@@ -70,7 +70,7 @@ class ImageDataset(Dataset):
     def __getitem__(self, index):
         item_A = Image.open(self.files_A[index % len(self.files_A)])                       
 
-        if self.unaligned:
+        if self.aligned:
             item_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)])            
         else:
             item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image
@@ -78,9 +78,8 @@ class ImageDataset(Dataset):
         if self.mode == 'train':
             if np.random.rand() < self.p_RGB2BGR_augment: # will not run when p_RGB2BGR_augment=0
                 item_A = color_mapping_cv2(item_A)
-                item_B = color_mapping_cv2(item_B)                            
-                            
-            elif np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
+                item_B = color_mapping_cv2(item_B)                                                        
+            if np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
                 item_A = PIL_invert(item_A)                
                 item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                
             
