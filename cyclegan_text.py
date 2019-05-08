@@ -52,32 +52,32 @@ parser.add_argument('--test_interval', type=int, default=11, help='interval to c
 
 opt = parser.parse_args()
 
+opt.seed_value = 12345
+opt.n_epochs = 500
+opt.decay_epoch= int(opt.n_epochs / 2) - 50
+
 opt.dataset_name = 'text_segmentation'# 'synthtext'
 opt.show_progress_every_n_iterations= 20  
 opt.batch_test_size = 5
 opt.AMS_grad = True
-opt.use_GT = False
+opt.use_white_GT = False
 opt.sample_interval = 1001
 opt.test_interval = 50
+opt.checkpoint_interval = 200
 
-# using .25 p ensures having .25 of the data unchanged during training
-opt.p_RGB2BGR_augment = 0.33 # .25 # 0 indicates no change to the 
-opt.p_invert_augment = 0.33# .25
-opt.p_color_augment = 0 #.25 # 0.25
+opt.p_RGB2BGR_augment = 0.5 # .25 # 0 indicates no change to the 
+opt.p_invert_augment = 0.5# .25
+
+opt.aligned=True
 
 
 #opt.lr= 0.000002
 #opt.b1 = 0.9
 # opt.b2 = 
 
-opt.n_epochs = 500
-# opt.decay_epoch=
-opt.checkpoint_interval = 200
-opt.seed_value = 12345
-
 generate_all_test_images = True
 
-print(opt)
+print('\n Experiment parameters', opt, '\n') 
 
 
 
@@ -112,9 +112,8 @@ def get_loaders():
     # Training data loader
     dataloader = DataLoader(ImageDataset("../data/%s" % opt.dataset_name, 
                            transform=transforms_gan,                            
-                           unaligned=False, 
-                           gt=opt.use_GT,
-                           p_color_augment= opt.p_color_augment,
+                           aligned=opt.aligned, 
+                           gt=opt.use_white_GT,                           
                            p_RGB2BGR_augment= opt.p_RGB2BGR_augment, 
                            p_invert_augment=opt.p_invert_augment
                            ), 
@@ -124,8 +123,9 @@ def get_loaders():
     
     val_dataloader = DataLoader(ImageDataset("../data/%s" % opt.dataset_name, 
                             transform = transforms_val,                           
-                            unaligned=False, mode='test', 
-                            gt=opt.use_GT
+                            aligned=True, # should always be aligned
+                            mode='test', 
+                            gt=opt.use_white_GT
                             ),
                             batch_size=opt.batch_test_size, 
                             shuffle=True, 
@@ -140,7 +140,7 @@ def get_loaders():
 
 def sample_images(imgs, batches_done, use_max=False):
     """Saves a generated sample from the test set"""
-     
+    second_pass_gan = True 
     real_A_pos = Variable(imgs['A'].type(Tensor))
     fake_B_pos = G_AB(real_A_pos)    
     real_A_neg = Variable(imgs['A_neg'].type(Tensor))
@@ -151,11 +151,18 @@ def sample_images(imgs, batches_done, use_max=False):
     save_image(img_sample, 'images/%s/%s.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)        
     
     if use_max:
-         fake_B_neg = reason_images(fake_B_pos, fake_B_neg)
-        
-    img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
+        fake_B_neg = reason_images(fake_B_pos, fake_B_neg)        
+        img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
                         real_A_neg.data, fake_B_neg.data), 0)
-    save_image(img_sample, 'images/%s/%s_max.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
+        save_image(img_sample, 'images/%s/%s_max.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
+    
+    if second_pass_gan:        
+        fake_BB_pos = G_AB(fake_B_pos)            
+        fake_BB_neg = G_AB(fake_B_neg)
+        img_sample = torch.cat((real_A_pos.data, fake_BB_pos.data,
+                        real_A_neg.data, fake_BB_neg.data), 0)
+        save_image(img_sample, 'images/%s/%s_2nd_gan.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
+        
 
 # choosing the best output between the positive and negative
 def reason_images(fake_B_pos, fake_B_neg):
