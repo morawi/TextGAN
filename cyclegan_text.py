@@ -13,24 +13,20 @@ import math
 import itertools
 import datetime
 import time
-
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
-
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torch.autograd import Variable
-
 from models import *
 from datasets import *
 from utils import *
-
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-
 import PIL.ImageOps 
 from numpy import random
+from F1_loss import F1_loss_prime
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=0, help='epoch to start training from')
@@ -64,11 +60,10 @@ opt.use_white_GT = False
 opt.sample_interval = 1001
 opt.test_interval = 50
 opt.checkpoint_interval = 200
-
 opt.p_RGB2BGR_augment = 0.5 # .25 # 0 indicates no change to the 
 opt.p_invert_augment = 0.5# .25
-
 opt.aligned=True
+opt.use_F1_loss = True
 
 
 #opt.lr= 0.000002
@@ -208,7 +203,12 @@ os.makedirs('saved_models/%s' % opt.dataset_name, exist_ok=True)
 # Losses
 criterion_GAN = torch.nn.MSELoss()
 criterion_cycle = torch.nn.L1Loss()
-criterion_identity = torch.nn.L1Loss()
+
+if opt.use_F1_loss:
+    criterion_identity = F1_loss_prime
+else: 
+    criterion_identity = torch.nn.L1Loss()
+
 criterion_identity_testing = torch.nn.L1Loss()
 
 # Calculate output of image discriminator (PatchGAN)
@@ -227,7 +227,11 @@ if cuda:
     D_B = D_B.cuda()
     criterion_GAN.cuda()
     criterion_cycle.cuda()
-    criterion_identity.cuda()
+    if opt.use_F1_loss:
+        criterion_identity# .cuda()
+    else:
+        criterion_identity.cuda()
+        
 
 if opt.epoch != 0:
     # Load pretrained models
