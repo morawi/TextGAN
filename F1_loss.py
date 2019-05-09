@@ -64,8 +64,8 @@ def arithmetic_or(x,y):
     return x + y - x*y
 
 
-def F1_loss(pred, target, reduce= True, thresh_val = 0, F1_inverse=True):   
-    
+def F1_loss(pred, target, reduce= True, thresh_val = 0):   
+    epsilon = 1e-10 # epsilon used to prevent overflow
     pred = torch.gt(pred, thresh_val).byte()
     target = torch.gt(target, thresh_val).byte()
     # N = torch.tensor(pred | target, dtype=torch.float32, requires_grad=True)  # logical
@@ -78,17 +78,15 @@ def F1_loss(pred, target, reduce= True, thresh_val = 0, F1_inverse=True):
     Tn = torch.sum(Tn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
     Fp = torch.sum(Fp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
     Fn = torch.sum(Fn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()    
-    F1_inv= 0.5* (2*Tp+Fp+Fn)/Tp
-    
-    if F1_inverse==False:
-        F1 = 1/ F1_inv
-    else:
-        F1 = F1_inv
+        
+    F1 = 1 - 2*(Tp-epsilon)/(2*Tp+Fp+Fn+epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
     
     if reduce == True:        
         F1 = F1.mean()
     else:
-        F1 = F1.mean(dim=0) # returns measure for each band
+        F1 = F1.mean(dim=0) # else, return a measure for each channel
+    
+    return F1
     
 #    accuracy = (Tp + Tn)/torch.sum(N, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
     F1.requires_grad_(True)
@@ -98,7 +96,7 @@ def F1_loss(pred, target, reduce= True, thresh_val = 0, F1_inverse=True):
 '''Same as F1_loss above but it is performed using boolean algebra'''
 def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):   
     
-    epsilon = 1e-10
+    epsilon = 1e-10 # epsilon used to prevent overflow
     pred   = torch.sigmoid(alpha*pred-beta).requires_grad_(True) 
     target = torch.sigmoid(alpha*target-beta).requires_grad_(True)     
     N = arithmetic_or(pred, target)  # logical
@@ -111,12 +109,12 @@ def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):
     Fp = torch.sum(Fp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
     Fn = torch.sum(Fn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()    
         
-    F1 = torch.abs(1  - 2*(Tp+epsilon)/(2*Tp+Fp+Fn+epsilon)) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
+    F1 = 1 - 2*(Tp - epsilon)/(2*Tp+Fp+Fn+epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
     
     if reduce == True:        
         F1 = F1.mean()
     else:
-        F1 = F1.mean(dim=0) # returns measure for each band
+        F1 = F1.mean(dim=0) # else, return a measure for each channel
     
     return F1
 
