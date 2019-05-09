@@ -58,11 +58,18 @@ in F1_loss. The threshold value in F1_loss_prime, alpha, should be selected care
 for F1_loss_prime, the value of alpha affects the thresholding.
 
 '''
+
+
+def arithmetic_or(x,y):
+    return x + y - x*y
+
+
 def F1_loss(pred, target, reduce= True, thresh_val = 0, F1_inverse=True):   
     
     pred = torch.gt(pred, thresh_val).byte()
     target = torch.gt(target, thresh_val).byte()
-    N = pred | target  # logical
+    # N = torch.tensor(pred | target, dtype=torch.float32, requires_grad=True)  # logical
+    N = pred | target
     Tp = pred & target
     Fn = target - Tp # element-wise subtraction in pytorch 
     Fp = pred - Tp     
@@ -81,88 +88,80 @@ def F1_loss(pred, target, reduce= True, thresh_val = 0, F1_inverse=True):
     if reduce == True:        
         F1 = F1.mean()
     else:
-        F1 = F1.mean(dim=0) #returns measure for each band
+        F1 = F1.mean(dim=0) # returns measure for each band
     
-    accuracy = (Tp + Tn)/torch.sum(N, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
-
-    return F1, accuracy 
+#    accuracy = (Tp + Tn)/torch.sum(N, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
+    F1.requires_grad_(True)
+    return F1 #, accuracy 
 
 
 '''Same as F1_loss above but it is performed using boolean algebra'''
-def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220, F1_inverse=True):   
-    # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
-    pred=torch.sigmoid(alpha*pred-beta)
-    target = torch.sigmoid(alpha*target-beta)    
+def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):   
+    
+    epsilon = 1e-10
+    pred   = torch.sigmoid(alpha*pred-beta).requires_grad_(True) 
+    target = torch.sigmoid(alpha*target-beta).requires_grad_(True)     
     N = arithmetic_or(pred, target)  # logical
     Tp = pred * target
     Fn = target - Tp 
     Fp = pred - Tp     
     Tn = N - arithmetic_or(arithmetic_or(Tp, Fp), Fn) 
-    Tp = torch.sum(Tp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze() # summing over x,y, keeping the batch and the channel dim
     Tn = torch.sum(Tn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
+    Tp = torch.sum(Tp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze() # summing over x,y, keeping the batch and the channel dim
     Fp = torch.sum(Fp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
     Fn = torch.sum(Fn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()    
-    
-    F1_inv = 0.5* (2*Tp+Fp+Fn)/(Tp)
-    
-    if F1_inverse==False:
-        F1 = 1/ F1_inv
-    else:
-        F1 = F1_inv
+        
+    F1 = torch.abs(1  - 2*(Tp+epsilon)/(2*Tp+Fp+Fn+epsilon)) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
     
     if reduce == True:        
         F1 = F1.mean()
     else:
         F1 = F1.mean(dim=0) # returns measure for each band
-        
+    
     return F1
 
 
 
 
-def arithmetic_or(x,y):
-    return x + y - x*y
 
 
 
-torch.manual_seed(1)
-y = torch.rand([5, 3, 256, 256])- .5 
-x = torch.rand([5, 3, 256, 256])- .2
-
-x.requires_grad_(True)
-y.requires_grad_(True)
-# x = Image.open('/home/malrawi/Desktop/My Programs/PyTorch-GANs/data/text_segmentation/test/B/img_614.png')
-# y = Image.open('/home/malrawi/Desktop/My Programs/PyTorch-GANs/data/text_segmentation/test/A/img_614.png')
-# trsfm = transforms.Compose([
-##            transforms.Resize((32,32)),
-#            transforms.ToTensor(),                       
-#            ])
-# x = trsfm(x).unsqueeze(dim=0)
-# y = trsfm(y).unsqueeze(dim=0)
-F1_prime  = F1_loss_prime(x, y, reduce=True, F1_inverse=True,
-                          alpha = 1100, beta = 220) # -0.08 threshold 
-
-
-
-F1, acc = F1_loss(x, y, reduce=True, F1_inverse=True,
-                  thresh_val=.2)
-
-
-print(F1_prime)
-
-print(F1)
+#torch.manual_seed(1)
+#y = torch.rand([5, 3, 10, 10])- .5 
+#x = torch.rand([5, 3, 10, 10])- .2
+#x.requires_grad_(True) 
+#y.requires_grad_(True)
+## x = Image.open('/home/malrawi/Desktop/My Programs/PyTorch-GANs/data/text_segmentation/test/B/img_614.png')
+## y = Image.open('/home/malrawi/Desktop/My Programs/PyTorch-GANs/data/text_segmentation/test/A/img_614.png')
+## trsfm = transforms.Compose([
+###            transforms.Resize((32,32)),
+##            transforms.ToTensor(),                       
+##            ])
+## x = trsfm(x).unsqueeze(dim=0)
+## y = trsfm(y).unsqueeze(dim=0)
+#F1_prime  = F1_loss_prime(x, y, reduce=True, F1_inverse=False,
+#                          alpha = 1100, beta = 220) # -0.08 threshold 
+#
+#F1  = F1_loss(x, y, reduce=True, F1_inverse=False, thresh_val=0.2)
+#
+#
+#print(F1_prime)
+#print(F1)
+#print(F1.is_leaf)
+#print(F1_prime.is_leaf)
+#
+#model = torch.nn.Linear(10, 1)
+#pred = model(x)
+#target = model(y)
+#loss = F1_loss_prime(pred, target)
+#loss.backward()
+#print(model.weight.grad)
 
 
 
 #to_pil = transforms.ToPILImage() 
 #to_pil(torch.sigmoid(1000*x-500)).show()
 #
-
-
-#P = Tp/(Tp+Fp) #  torch.div(Tp, Tp+ Fp)  # Precision
-#R =    Tp/(Tp+Fn) # torch.div(Tp, Tp + Fn) # Recall
-#F1 = 2*P*R/(P+R)  # we need the F1 inverse as the loss is a minimization problem
-
 
 
 #
