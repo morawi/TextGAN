@@ -79,7 +79,7 @@ def F1_loss(pred, target, reduce= True, thresh_val = 0):
     Fp = torch.sum(Fp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
     Fn = torch.sum(Fn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()    
         
-    F1 = 1 - 2*(Tp-epsilon)/(2*Tp+Fp+Fn+epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
+    F1 = 1 - 2*(Tp+epsilon)/(2*Tp+Fp+Fn - epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
     
     if reduce == True:        
         F1 = F1.mean()
@@ -109,7 +109,7 @@ def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):
     Fp = torch.sum(Fp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
     Fn = torch.sum(Fn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()    
         
-    F1 = 1 - 2*(Tp - epsilon)/(2*Tp+Fp+Fn+epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
+    F1 = 1 - 2*(Tp + epsilon)/(2*Tp+Fp+Fn - epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
     
     if reduce == True:        
         F1 = F1.mean()
@@ -120,6 +120,16 @@ def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):
 
 
 
+
+#model = torch.nn.Linear(10, 1)
+#x = torch.randn(1, 2)
+##y = torch.rand([5, 3, 10, 10])- .5 
+##x = torch.rand([5, 3, 10, 10])- .2
+#target = torch.randn(1, 2)
+#output = model(x)
+#loss = my_loss(output, target)
+#loss.backward()
+#print(model.weight.grad)
 
 
 
