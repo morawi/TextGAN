@@ -6,12 +6,71 @@ Created on Sat May 11 17:53:36 2019
 @author: malrawi
 """
 import torchvision.transforms as transforms
-from datasets import *
+from datasets import ImageDataset
 from torch.utils.data import DataLoader
-# from torchvision import datasets
+from torchvision.utils import save_image
 import torch
 import numpy as np
 from numpy import random
+
+
+# choosing the best output between the positive and negative
+def reason_images(fake_B_pos, fake_B_neg):
+    for i in range(len(fake_B_pos)):
+            s_pos = fake_B_pos.data[i].sum()
+            s_neg = fake_B_neg.data[i].sum()
+            if s_pos>s_neg:
+                fake_B_neg.data[i] = fake_B_pos.data[i] 
+    return fake_B_neg
+
+
+
+def test_performance(Tensor, val_dataloader, G_AB,
+                                  criterion_testing, use_max=False):
+    ''' Calculates the overall identitiy loss of the test set '''
+    loss_id_B = 0; loss_id_B_max=0
+    with torch.no_grad():
+        for batch_idx, imgs in enumerate(val_dataloader):            
+            real_A_pos = imgs['A'].type(Tensor)
+            fake_B_pos = G_AB(real_A_pos) 
+            real_B_pos = imgs['B'].type(Tensor)       
+            loss_id_B += criterion_testing(fake_B_pos, real_B_pos)
+            
+            if use_max:
+                real_A_neg = imgs['A_neg'].type(Tensor)
+                fake_B_neg = G_AB(real_A_neg)             
+                fake_B_neg = reason_images(fake_B_pos, fake_B_neg)                
+                loss_id_B_max += criterion_testing(fake_B_neg, real_B_pos) # between max and neg
+    print('\n Identity L1 evaluation all testing samples', loss_id_B/len(val_dataloader.dataset))
+    if use_max: print('max(neg, pos) identity L1 evaluation all testing samples', loss_id_B_max/len(val_dataloader.dataset))
+    
+
+
+def sample_images(imgs, batches_done, G_AB, Tensor, opt, use_max=False):
+    """Saves a generated sample from the test set"""
+    second_pass_gan = True 
+    real_A_pos = imgs['A'].type(Tensor)
+    fake_B_pos = G_AB(real_A_pos)    
+    real_A_neg = imgs['A_neg'].type(Tensor)
+    fake_B_neg = G_AB(real_A_neg)    
+    
+    img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
+                            real_A_neg.data, fake_B_neg.data), 0)
+    save_image(img_sample, 'images/%s/%s.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)        
+    
+    if use_max:
+        fake_B_neg = reason_images(fake_B_pos, fake_B_neg)        
+        img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
+                        real_A_neg.data, fake_B_neg.data), 0)
+        save_image(img_sample, 'images/%s/%s_max.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
+    
+    if second_pass_gan:        
+        fake_BB_pos = G_AB(fake_B_pos)            
+        fake_BB_neg = G_AB(fake_B_neg)
+        img_sample = torch.cat((real_A_pos.data, fake_BB_pos.data,
+                        real_A_neg.data, fake_BB_neg.data), 0)
+        save_image(img_sample, 'images/%s/%s_2nd_gan.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
+        
 
 
 
@@ -70,13 +129,5 @@ def get_loaders(opt):
 #           tsfm= transforms.ToPILImage()
     
 
-# choosing the best output between the positive and negative
-def reason_images(fake_B_pos, fake_B_neg):
-    for i in range(len(fake_B_pos)):
-            s_pos = fake_B_pos.data[i].sum()
-            s_neg = fake_B_neg.data[i].sum()
-            if s_pos>s_neg:
-                fake_B_neg.data[i] = fake_B_pos.data[i] 
-    return fake_B_neg
 
 

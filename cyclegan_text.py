@@ -4,29 +4,24 @@
 Created on Sun Apr 14 16:27:13 2019
 
 @author: malrawi
+
+https://hardikbansal.github.io/CycleGANBlog/
+https://github.com/eriklindernoren/PyTorch-GAN
+
 """
 
 import argparse
 import os
 import numpy as np
-import math
 import itertools
 import datetime
 import time
-import torchvision.transforms as transforms
-from torchvision.utils import save_image
-from torch.utils.data import DataLoader
-from torchvision import datasets
 from torch.autograd import Variable
 from models import *
-from datasets import *
 from utils import *
-import torch.nn as nn
-import torch.nn.functional as F
 import torch
-import PIL.ImageOps 
-from numpy import random
 from F1_loss import F1_loss_prime
+from misc_functions import random_seeding, get_loaders, sample_images, test_performance
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=0, help='epoch to start training from')
@@ -45,156 +40,48 @@ parser.add_argument('--sample_interval', type=int, default=100, help='interval b
 parser.add_argument('--checkpoint_interval', type=int, default=-1, help='interval between saving model checkpoints')
 parser.add_argument('--n_residual_blocks', type=int, default=9, help='number of residual blocks in generator')
 parser.add_argument('--test_interval', type=int, default=11, help='interval to calculate overall testing performance via L1')
-
 opt = parser.parse_args()
-
-opt.seed_value = 12345
-opt.n_epochs = 500
-opt.decay_epoch= int(opt.n_epochs / 2) - 50
-
-opt.dataset_name = 'text_segmentation'# 'synthtext'
-opt.show_progress_every_n_iterations= 20  
-opt.batch_test_size = 5
-opt.AMS_grad = True
-opt.use_white_GT = False
-opt.sample_interval = 1001
-opt.test_interval = 50
-opt.checkpoint_interval = 200
-opt.p_RGB2BGR_augment = 0.5 # .25 # 0 indicates no change to the 
-opt.p_invert_augment = 0.5# .25
-opt.aligned=True
-opt.use_F1_loss = True
-
-
-#opt.lr= 0.000002
-#opt.b1 = 0.9
-# opt.b2 = 
 
 generate_all_test_images = True
 
-print('\n Experiment parameters', opt, '\n') 
+
+opt.seed_value = 12345
+opt.n_epochs = 200
+opt.decay_epoch= int(opt.n_epochs / 2) 
+opt.img_width=64
+opt.img_height=64
+opt.dataset_name = 'text_segmentation'+str(opt.img_width)# 'synthtext'
+opt.show_progress_every_n_iterations= 20  
+opt.batch_test_size = 5
+opt.AMS_grad = True
+opt.sample_interval = 600
+opt.test_interval = 50
+opt.checkpoint_interval = 200
+opt.p_RGB2BGR_augment = 0.5 # .25 # 0 indicates no change to the 
+opt.p_invert_augment = 0.5 # .25
+opt.aligned = False
+opt.use_F1_loss = False
+opt.use_white_GT = False
+
+# Loss weights
+opt.lambda_cyc = 10
+opt.lambda_cycle_B = 2 # default is 1 
+opt.lambda_id = 0.5 * opt.lambda_cyc
+if opt.use_F1_loss:    
+    opt.lambda_id_B = 10  # default is 1
+else: opt.lambda_id_B = 2  # defatul is 1
 
 
 
-def random_seeding(seed_value, state, cuda_rng_state):    
-    
-    np.random.seed(seed_value)
-    random.seed(seed_value)    
-    torch.random.initial_seed()    
-    torch.manual_seed(seed_value)   
-    
-    if cuda: 
-        torch.cuda.manual_seed_all(seed_value)
-        torch.cuda.set_rng_state(cuda_rng_state)     
-    torch.set_rng_state(state)   
-
-    
-
-def get_loaders():
-    # Image transformations
-    transforms_gan = [    
-    #        transforms.Resize(int(opt.img_height*1.12), Image.BICUBIC),
-    #        transforms.RandomCrop((opt.img_height, opt.img_width)),
-    #        transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5)) 
-    ]
-    
-    transforms_val = [ 
-            transforms.ToTensor(),
-            transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5)) ]
-    
-    # Training data loader
-    dataloader = DataLoader(ImageDataset("../data/%s" % opt.dataset_name, 
-                           transform=transforms_gan,                            
-                           aligned=opt.aligned, 
-                           gt=opt.use_white_GT,                           
-                           p_RGB2BGR_augment= opt.p_RGB2BGR_augment, 
-                           p_invert_augment=opt.p_invert_augment
-                           ), 
-                    batch_size=opt.batch_size, 
-                    shuffle=True,  
-                    num_workers=opt.n_cpu)
-    
-    val_dataloader = DataLoader(ImageDataset("../data/%s" % opt.dataset_name, 
-                            transform = transforms_val,                           
-                            aligned=True, # should always be aligned
-                            mode='test', 
-                            gt=opt.use_white_GT
-                            ),
-                            batch_size=opt.batch_test_size, 
-                            shuffle=True, 
-                            num_workers=1                            
-                            )
-    
-    return dataloader, val_dataloader
-
-
-
-#           tsfm= transforms.ToPILImage()
-
-def sample_images(imgs, batches_done, use_max=False):
-    """Saves a generated sample from the test set"""
-    second_pass_gan = True 
-    real_A_pos = Variable(imgs['A'].type(Tensor))
-    fake_B_pos = G_AB(real_A_pos)    
-    real_A_neg = Variable(imgs['A_neg'].type(Tensor))
-    fake_B_neg = G_AB(real_A_neg)    
-    
-    img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
-                            real_A_neg.data, fake_B_neg.data), 0)
-    save_image(img_sample, 'images/%s/%s.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)        
-    
-    if use_max:
-        fake_B_neg = reason_images(fake_B_pos, fake_B_neg)        
-        img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
-                        real_A_neg.data, fake_B_neg.data), 0)
-        save_image(img_sample, 'images/%s/%s_max.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
-    
-    if second_pass_gan:        
-        fake_BB_pos = G_AB(fake_B_pos)            
-        fake_BB_neg = G_AB(fake_B_neg)
-        img_sample = torch.cat((real_A_pos.data, fake_BB_pos.data,
-                        real_A_neg.data, fake_BB_neg.data), 0)
-        save_image(img_sample, 'images/%s/%s_2nd_gan.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
-        
-
-# choosing the best output between the positive and negative
-def reason_images(fake_B_pos, fake_B_neg):
-    for i in range(len(fake_B_pos)):
-            s_pos = fake_B_pos.data[i].sum()
-            s_neg = fake_B_neg.data[i].sum()
-            if s_pos>s_neg:
-                fake_B_neg.data[i] = fake_B_pos.data[i] 
-    return fake_B_neg
-
-def overall_test_time_performance(use_max=False):
-    ''' Calculates the overall identitiy loss of the test set '''
-    loss_id_B = 0; loss_id_B_max=0
-    with torch.no_grad():
-        for batch_idx, imgs in enumerate(val_dataloader):            
-            real_A_pos = imgs['A'].type(Tensor)
-            fake_B_pos = G_AB(real_A_pos) 
-            real_B_pos = imgs['B'].type(Tensor)       
-            loss_id_B += criterion_identity_testing(fake_B_pos, real_B_pos)
-            
-            if use_max:
-                real_A_neg = imgs['A_neg'].type(Tensor)
-                fake_B_neg = G_AB(real_A_neg)             
-                fake_B_neg = reason_images(fake_B_pos, fake_B_neg)                
-                loss_id_B_max += criterion_identity_testing(fake_B_neg, real_B_pos) # between max and neg
-    print('\n Identity L1 evaluation all testing samples', loss_id_B/len(val_dataloader.dataset))
-    if use_max: print('max(neg, pos) identity L1 evaluation all testing samples', loss_id_B_max/len(val_dataloader.dataset))
-    
 
 
 ''''''''''''' Main Program'''''''''''''''''''
-
+print('\n Experiment parameters', opt, '\n') 
 cuda = True if torch.cuda.is_available() else False
-dataloader, val_dataloader = get_loaders()
+dataloader, val_dataloader = get_loaders(opt)
 random_seeding(opt.seed_value, 
                torch.get_rng_state(), 
-               torch.cuda.get_rng_state())        
+               torch.cuda.get_rng_state(), cuda)        
 
 # Create sample and checkpoint directories
 os.makedirs('images/%s' % opt.dataset_name, exist_ok=True)
@@ -203,11 +90,11 @@ os.makedirs('saved_models/%s' % opt.dataset_name, exist_ok=True)
 # Losses
 criterion_GAN = torch.nn.MSELoss()
 criterion_cycle = torch.nn.L1Loss()
-
+criterion_identity_A = torch.nn.L1Loss()
 if opt.use_F1_loss:
-    criterion_identity = F1_loss_prime
-else: 
-    criterion_identity = torch.nn.L1Loss()
+    criterion_identity_B = F1_loss_prime    
+else:     
+    criterion_identity_B = torch.nn.L1Loss()
 
 criterion_identity_testing = torch.nn.L1Loss()
 
@@ -227,12 +114,10 @@ if cuda:
     D_B = D_B.cuda()
     criterion_GAN.cuda()
     criterion_cycle.cuda()
-    if opt.use_F1_loss:
-        criterion_identity# .cuda()
-    else:
-        criterion_identity.cuda()
+    if not  opt.use_F1_loss:        
+        criterion_identity_A.cuda()        
+        criterion_identity_B.cuda()        
         
-
 if opt.epoch != 0:
     # Load pretrained models
     G_AB.load_state_dict(torch.load('saved_models/%s/G_AB_%d.pth' % (opt.dataset_name, opt.epoch)))
@@ -246,9 +131,7 @@ else:
     D_A.apply(weights_init_normal)
     D_B.apply(weights_init_normal)
 
-# Loss weights
-lambda_cyc = 10
-lambda_id = 0.5 * lambda_cyc
+
 
 # Optimizers
 optimizer_G = torch.optim.Adam(itertools.chain(G_AB.parameters(), G_BA.parameters()),
@@ -274,7 +157,7 @@ fake_B_buffer = ReplayBuffer()
 # ----------
 #  Training
 # ----------
-#           tsfm= transforms.ToPILImage()
+
 prev_time = time.time()
 for epoch in range(opt.epoch, opt.n_epochs):
     for i, batch in enumerate(dataloader):
@@ -287,46 +170,45 @@ for epoch in range(opt.epoch, opt.n_epochs):
         valid = Variable(Tensor(np.ones((real_A.size(0), *patch))), requires_grad=False)
         fake = Variable(Tensor(np.zeros((real_A.size(0), *patch))), requires_grad=False)
 
-        # ------------------
-        #  Train Generators
-        # ------------------
+        ''' ------------------
+           Train Generators
+         ------------------ '''
 
         optimizer_G.zero_grad()
 
         # Identity loss
-        loss_id_A = criterion_identity(G_BA(real_A), real_A)
-        loss_id_B = criterion_identity(G_AB(real_B), real_B)
-
-        loss_identity = (loss_id_A + loss_id_B) / 2
+        loss_id_A = criterion_identity_A(G_BA(real_A), real_A)
+        loss_id_B = criterion_identity_B(G_AB(real_B), real_B)
+        loss_identity = loss_id_A + opt.lambda_id_B*loss_id_B
 
         # GAN loss
         fake_B = G_AB(real_A)
         loss_GAN_AB = criterion_GAN(D_B(fake_B), valid)
         fake_A = G_BA(real_B)
         loss_GAN_BA = criterion_GAN(D_A(fake_A), valid)
-
-        loss_GAN = (loss_GAN_AB + loss_GAN_BA) / 2
+        loss_GAN = loss_GAN_AB + loss_GAN_BA
 
         # Cycle loss
         recov_A = G_BA(fake_B)
         loss_cycle_A = criterion_cycle(recov_A, real_A)
         recov_B = G_AB(fake_A)
         loss_cycle_B = criterion_cycle(recov_B, real_B)
-
-        loss_cycle = (loss_cycle_A + loss_cycle_B) / 2
+        loss_cycle = loss_cycle_A +  opt.lambda_cycle_B*loss_cycle_B
 
         # Total loss
-        loss_G =    loss_GAN + \
-                    lambda_cyc * loss_cycle + \
-                    lambda_id * loss_identity
+        loss_G =   ( loss_GAN + 
+                    opt.lambda_cyc * loss_cycle + 
+                    opt.lambda_id * loss_identity ) 
 
         loss_G.backward()
         optimizer_G.step()
+        
+        
 
-        # -----------------------
-        #  Train Discriminator A
-        # -----------------------
-
+        ''' -----------------------
+           Train Discriminator A
+         ----------------------- '''
+         
         optimizer_D_A.zero_grad()
 
         # Real loss
@@ -340,9 +222,9 @@ for epoch in range(opt.epoch, opt.n_epochs):
         loss_D_A.backward()
         optimizer_D_A.step()
 
-        # -----------------------
-        #  Train Discriminator B
-        # -----------------------
+        ''' -----------------------
+           Train Discriminator B
+         ----------------------- '''
 
         optimizer_D_B.zero_grad()
 
@@ -374,13 +256,16 @@ for epoch in range(opt.epoch, opt.n_epochs):
             sys.stdout.write("\r[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f, adv: %f, cycle: %f, identity: %f] ETA(time-left): %s" %
                                                             (epoch, opt.n_epochs,
                                                             i, len(dataloader),
-                                                            loss_D.item(), loss_G.item(),
-                                                            loss_GAN.item(), loss_cycle.item(),
+                                                            loss_D.item(), 
+                                                            loss_G.item(),
+                                                            loss_GAN.item(), 
+                                                            loss_cycle.item(),
                                                             loss_identity.item(), time_left))
             
         # If at sample interval save image
         if not batches_done % opt.sample_interval:            
-            sample_images(next(iter(val_dataloader)), batches_done, use_max=True) # another instance
+            sample_images(next(iter(val_dataloader)), batches_done, 
+                          G_AB, Tensor, opt, use_max=True) # another instance
 
 
     # Update learning rates
@@ -395,9 +280,11 @@ for epoch in range(opt.epoch, opt.n_epochs):
         torch.save(D_A.state_dict(), 'saved_models/%s/D_A_%d.pth' % (opt.dataset_name, epoch))
         torch.save(D_B.state_dict(), 'saved_models/%s/D_B_%d.pth' % (opt.dataset_name, epoch))
     if not epoch % opt.test_interval:
-        overall_test_time_performance(use_max=True)
-        
-overall_test_time_performance(use_max=True)
+        test_performance(Tensor, val_dataloader, G_AB,
+                                  criterion_identity_testing, use_max=False)
+
+test_performance(Tensor, val_dataloader, G_AB,
+                                  criterion_identity_testing, use_max=False)
 if generate_all_test_images:
     for batch_idx, imgs in enumerate(val_dataloader):
         sample_images(imgs, batch_idx, use_max=True) # another instance
