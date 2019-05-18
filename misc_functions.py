@@ -14,6 +14,7 @@ import numpy as np
 from numpy import random
 
 
+
 # choosing the best output between the positive and negative
 def reason_images(fake_B_pos, fake_B_neg):
     for i in range(len(fake_B_pos)):
@@ -41,8 +42,11 @@ def test_performance(Tensor, val_dataloader, G_AB,
                 fake_B_neg = G_AB(real_A_neg)             
                 fake_B_neg = reason_images(fake_B_pos, fake_B_neg)                
                 loss_id_B_max += criterion_testing(fake_B_neg, real_B_pos) # between max and neg
-    print('\n Identity L1 evaluation all testing samples', loss_id_B/len(val_dataloader.dataset))
-    if use_max: print('max(neg, pos) identity L1 evaluation all testing samples', loss_id_B_max/len(val_dataloader.dataset))
+    
+    if use_max: 
+        print('max(neg, pos) Identity L1 evaluation all testing samples', loss_id_B_max.item()/len(val_dataloader.dataset))
+    else:
+        print('Identity L1 evaluation all testing samples', loss_id_B.item()/len(val_dataloader.dataset))
     
 
 
@@ -105,9 +109,10 @@ def get_loaders(opt):
     dataloader = DataLoader(ImageDataset("../data/%s" % opt.dataset_name, 
                            transform=transforms_gan,                            
                            aligned=opt.aligned, 
-                           gt=opt.use_white_GT,                           
+                           data_mode = opt.data_mode,                           
                            p_RGB2BGR_augment= opt.p_RGB2BGR_augment, 
-                           p_invert_augment=opt.p_invert_augment
+                           p_invert_augment=opt.p_invert_augment, 
+                           use_B_prime = opt.use_B_prime
                            ), 
                     batch_size=opt.batch_size, 
                     shuffle=True,  
@@ -117,7 +122,7 @@ def get_loaders(opt):
                             transform = transforms_val,                           
                             aligned=True, # should always be aligned
                             mode='test', 
-                            gt=opt.use_white_GT
+                            data_mode = opt.data_mode,
                             ),
                             batch_size=opt.batch_test_size, 
                             shuffle=True, 
