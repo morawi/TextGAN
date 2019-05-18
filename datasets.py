@@ -45,7 +45,7 @@ def color_mapping_cv2(img):
 
 class ImageDataset(Dataset):
     def __init__(self, root, transform=None, aligned=True, mode='train', 
-                 gt=False, p_color_augment=0, p_RGB2BGR_augment=0, 
+                 data_mode = 'black', p_color_augment=0, p_RGB2BGR_augment=0, 
                  p_invert_augment=0, use_B_prime=False):
         '''Args-
         gt=True, loads the white Ground Truth pixel level text, if False, use the colored  
@@ -60,16 +60,18 @@ class ImageDataset(Dataset):
         self.p_RGB2BGR_augment = p_RGB2BGR_augment
         self.p_invert_augment = p_invert_augment
         self.use_B_prime = use_B_prime # use images not related to A folder, only in training
+        self.data_mod = data_mode
         
-
         self.files_A = sorted(glob.glob(os.path.join(root, '%s/A' % mode) + '/*.*'))
-        if use_B_prime: 
+        if self.use_B_prime: 
             self.files_B_prime = sorted(glob.glob(os.path.join(root, '%s/B_prime' % mode) + '/*.*'))
-        if not gt:
+        if data_mode=='black':
             self.files_B = sorted(glob.glob(os.path.join(root, '%s/B' % mode) + '/*.*'))
-        else:
+        elif data_mode =='lime':
+            self.files_B = sorted(glob.glob(os.path.join(root, '%s/B_lime' % mode) + '/*.*'))
+        else: #B_gt denotes wihte text on black background
             self.files_B = sorted(glob.glob(os.path.join(root, '%s/B_gt' % mode) + '/*.*'))
-                       
+                              
 
     def __getitem__(self, index):
         item_A = Image.open(self.files_A[index % len(self.files_A)])                       
@@ -86,13 +88,15 @@ class ImageDataset(Dataset):
                 item_A = color_mapping_cv2(item_A)
                 if not self.use_B_prime:               
                     item_B = color_mapping_cv2(item_B)                                                        
-                else: item_B = item_B_prime
+                else: item_B = item_B_prime 
             if np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
                 item_A = PIL_invert(item_A)  
                 if not self.use_B_prime:                    
                     item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                
                 else: item_B = item_B_prime
-                                                
+            elif self.use_B_prime: item_B = item_B_prime
+            
+                                                    
         item_A_neg = self.transform(PIL_invert(item_A)) # this will only be used in validation        
         item_B = self.transform(item_B)
         item_A = self.transform(item_A)
