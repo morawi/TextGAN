@@ -24,12 +24,14 @@ import torch
 from F1_loss import F1_loss_prime
 from misc_functions import random_seeding, get_loaders, sample_images, test_performance
 import torchvision.models as torchvis_models
+from torchvision.utils import save_image
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=0, help='epoch to start training from')
 parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
 parser.add_argument('--dataset_name', type=str, default="horse2zebra", help='name of the dataset')
 parser.add_argument('--batch_size', type=int, default=1, help='size of the batches')
+parser.add_argument('--batch_test_size', type=int, default=5, help='size of the test batches')
 parser.add_argument('--lr', type=float, default=0.0002, help='adam: learning rate')
 parser.add_argument('--b1', type=float, default=0.5, help='adam: decay of first order momentum of gradient')
 parser.add_argument('--b2', type=float, default=0.999, help='adam: decay of first order momentum of gradient')
@@ -47,15 +49,16 @@ opt = parser.parse_args()
 generate_all_test_images = True
 
 # opt.lr=0.00001
-opt.epoch= 200  # to load previous models
-opt.n_epochs = 300
+opt.epoch= 0  # to load previous models, use more than 0
+opt.n_epochs = 3
+opt.batch_test_size = 1
 opt.seed_value = 12345
-opt.decay_epoch= 100  if opt.n_epochs>100 else 50
+opt.decay_epoch= 100  if opt.n_epochs>100 else opt.n_epochs//2
 opt.img_width= 256
 opt.img_height= 256
 opt.dataset_name = 'text_segmentation'+str(opt.img_width)# 'synthtext'
 opt.show_progress_every_n_iterations= 20  
-opt.batch_test_size = 5
+
 opt.AMS_grad = True
 opt.sample_interval = 1000
 opt.test_interval = 10
@@ -64,8 +67,15 @@ opt.p_RGB2BGR_augment = 0#  0.5 # .25 # 0 indicates no change to the
 opt.p_invert_augment = 0#  0.5 # .25
 opt.aligned = True
 opt.use_F1_loss = False
-opt.data_mode = 'lime' # this is the background of GT one of three: 'black', 'lime', 'white' the latter is text on black background, 'prime' when using irrelivant synthetic text, prime is always unalighned and independent from the scene-text images
 opt.use_whollyG = False # use an optimizer on top of the GAN to learn the lambda's of the losses
+opt.data_mode = '' 
+''' this is the background of GT one of four: 
+'': for black, 
+'_lime' for lime color, 
+'_gt': for white  text on black background, 
+'_prime': when using irrelivant synthetic text, prime is always unalighned and independent from the scene-text images 
+'''
+
 # Loss weights
 #opt.lambda_cyc = 10
 #opt.lambda_cycle_B = 2 # default is 1 
@@ -104,7 +114,7 @@ if opt.use_F1_loss:
 else:     
     criterion_identity_B = torch.nn.L1Loss()
 
-criterion_identity_testing = torch.nn.L1Loss()
+criterion_identity_testing = torch.nn.L1Loss() # F1_loss_prime   
 
 # Calculate output of image discriminator (PatchGAN)
 patch = (1, opt.img_height // 2**4, opt.img_width // 2**4)
@@ -184,57 +194,66 @@ if opt.use_whollyG:
 
 
 
-model_classify = torchvis_models.resnet18(pretrained=True)
-model_classify.fc = torch.nn.Linear(8192, 1) #2048 for 256x256 image
-model_classify.aux_logits = False
-model_classify = model_classify.to(device)
+B_classify = torchvis_models.resnet18(pretrained=True)
+B_classify.fc = torch.nn.Linear(2048, 1) #2048 for 256x256 image
+B_classify.aux_logits = False
+B_classify = B_classify.to(device)
 lr_classify = 0.001
-optimizer_classify = torch.optim.Adam(model_classify.parameters(), lr=lr_classify)
-criterion_classify = torch.nn.CrossEntropyLoss(reduction='sum')  
-criterion_classify_labeling = torch.nn.L1Loss() # reduction=None)  
+optimizer_classify = torch.optim.Adam(B_classify.parameters(), lr=lr_classify)
+criterion_classify_labeling = torch.nn.L1Loss(reduction='sum') # reduction=None)  
+criterion_classify = torch.nn.L1Loss(reduction='sum')
 
 def train_model_classify(no_epochs):    
-    model_classify.train()
+    B_classify.train()
     for epoch_ in range(1, no_epochs):
+        print(epoch_, end='')
         for i, batch in enumerate(dataloader):
-            real_B = Variable(batch['B'].type(Tensor)) #this is real_B_pos
+            real_B = batch['B'].type(Tensor).to(device)
+            real_B_neg = batch['B_neg'].type(Tensor).to(device)
             ''' +ve phase '''
-            real_A = Variable(batch['A'].type(Tensor))                    
-            B_pos = G_AB(real_A)             
+            real_A = batch['A'].type(Tensor).to(device)
+            B_pos = G_AB(real_A).detach()             
             optimizer_classify.zero_grad()
-            output = model_classify(B_pos)  
-            target = criterion_classify_labeling(B_pos-real_B)
-            loss_B = criterion_classify(output-target)
-            loss_B.backward()
-            optimizer_classify.step(B_pos - real_B)
+            output = B_classify(B_pos)  
+            target = criterion_classify_labeling(B_pos, real_B)
+            loss_B = criterion_classify(output, target)
+            loss_B.backward() 
+            optimizer_classify.step()
             ''' -ve phase '''
             real_A_neg = Variable(batch['A_neg'].type(Tensor))
-            B_neg = G_AB(real_A_neg) 
+            B_neg = G_AB(real_A_neg).detach() 
             optimizer_classify.zero_grad()
-            output = model_classify(B_neg)  
-            target = criterion_classify_labeling(B_neg-real_B)
-            loss_Bneg = criterion_classify(output-real_B) # do we need a real_B_neg?
+            output = B_classify(B_neg)  
+            target_neg = criterion_classify_labeling(B_neg, real_B_neg)
+            loss_Bneg = criterion_classify(output, target_neg) # do we need a real_B_neg?
             loss_Bneg.backward()
             optimizer_classify.step()
         
         
-def test_model_classify():  
-     model_classify.eval()
-     with torch.no_grad():
-        for batch_idx, batch in enumerate(val_dataloader):            
-            real_A_pos = batch['A'].type(Tensor)
-            GAN_B_pos = G_AB(real_A_pos)             
-            real_A_neg = batch['A_neg'].type(Tensor)
-            GAN_B_neg = G_AB(real_A_neg) 
-            real_B_pos = batch['B'].type(Tensor) # maybe we need real_B_neg 
-            out_B_pos =  model_classify(GAN_B_pos)
-            out_B_neg =  model_classify(GAN_B_neg)
-            # now, compare the two outputs to infer the best
-            # based on the lowest value
-            
-            
-            
-            
+def test_model_classify(test_loss, test_dataloader):  
+    threshold = 0    
+    loss = 0 
+    B_classify.eval()
+    with torch.no_grad():
+       for batch_idx, batch in enumerate(test_dataloader):            
+           real_B = batch['B'].type(Tensor) # since we are thresholding, there is no difference between B and B_neg
+           real_A_pos = batch['A'].type(Tensor)
+           GAN_B_pos = G_AB(real_A_pos)             
+           real_A_neg = batch['A_neg'].type(Tensor)
+           GAN_B_neg = G_AB(real_A_neg)             
+           out_B_pos =  B_classify(GAN_B_pos)
+           out_B_neg =  B_classify(GAN_B_neg)
+           if out_B_pos< out_B_neg:
+               B_good = out_B_pos
+           else: B_good = out_B_neg           
+           loss += test_loss(real_B>threshold, B_good>threshold)  
+           img_sample = torch.cat((real_A.data, real_B.data, B_good.data, 
+                                   (B_good>threshold).data), 0)
+           save_image(img_sample, 'images/%s/%s.png' % 
+                      (opt.dataset_name, batch_idx), nrow=5, normalize=True)        
+                         
+                
+    return loss/len(test_dataloader.dataset)
             
      
 
@@ -401,20 +420,20 @@ for epoch in range(opt.epoch, opt.n_epochs):
         torch.save(D_A.state_dict(), 'saved_models/%s/D_A_%d.pth' % (opt.dataset_name, epoch))
         torch.save(D_B.state_dict(), 'saved_models/%s/D_B_%d.pth' % (opt.dataset_name, epoch))
     if not epoch % opt.test_interval:
-        test_performance(Tensor, val_dataloader, G_AB,
-                                  criterion_identity_testing, use_max=False)
-        test_performance(Tensor, val_dataloader, G_AB,
-                                  criterion_identity_testing, use_max=True)
+        test_performance(Tensor, val_dataloader, G_AB, 
+                                  criterion_identity_testing)
 
-test_performance(Tensor, val_dataloader, G_AB,
-                                  criterion_identity_testing, use_max=False)
-test_performance(Tensor, val_dataloader, G_AB,
-                                  criterion_identity_testing, use_max=True)
+ 
+train_model_classify(10)     
+   
+test_model_classify(criterion_identity_testing, val_dataloader) 
+#test_performance(Tensor, val_dataloader, G_AB,
+#                                  criterion_identity_testing)
 
-if generate_all_test_images:
-    for batch_idx, imgs in enumerate(val_dataloader):
-        sample_images(imgs, batch_idx, G_AB, Tensor, opt, use_max=False) # another instance
-        
+#if generate_all_test_images:
+#    for batch_idx, imgs in enumerate(val_dataloader):
+#        sample_images(imgs, batch_idx, G_AB, Tensor, opt, use_max=False) # another instance
+#        
         
     
     
