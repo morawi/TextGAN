@@ -8,6 +8,7 @@ Created on Sun Apr 14 16:27:13 2019
 https://hardikbansal.github.io/CycleGANBlog/
 https://github.com/eriklindernoren/PyTorch-GAN
 
+
 """
 
 import argparse
@@ -22,6 +23,7 @@ from utils import *
 import torch
 from F1_loss import F1_loss_prime
 from misc_functions import random_seeding, get_loaders, sample_images, test_performance
+import torchvision.models as torchvis_models
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=0, help='epoch to start training from')
@@ -44,34 +46,40 @@ opt = parser.parse_args()
 
 generate_all_test_images = True
 
-
+# opt.lr=0.00001
+opt.epoch= 200  # to load previous models
+opt.n_epochs = 300
 opt.seed_value = 12345
-opt.n_epochs = 200
-opt.decay_epoch= int(opt.n_epochs / 2) 
-opt.img_width=64
-opt.img_height=64
+opt.decay_epoch= 100  if opt.n_epochs>100 else 50
+opt.img_width= 256
+opt.img_height= 256
 opt.dataset_name = 'text_segmentation'+str(opt.img_width)# 'synthtext'
 opt.show_progress_every_n_iterations= 20  
 opt.batch_test_size = 5
 opt.AMS_grad = True
-opt.sample_interval = 600
-opt.test_interval = 50
+opt.sample_interval = 1000
+opt.test_interval = 10
 opt.checkpoint_interval = 200
-opt.p_RGB2BGR_augment = 0.5 # .25 # 0 indicates no change to the 
-opt.p_invert_augment = 0.5 # .25
-opt.aligned = False
+opt.p_RGB2BGR_augment = 0#  0.5 # .25 # 0 indicates no change to the 
+opt.p_invert_augment = 0#  0.5 # .25
+opt.aligned = True
 opt.use_F1_loss = False
-opt.use_white_GT = False
-
+opt.data_mode = 'lime' # this is the background of GT one of three: 'black', 'lime', 'white' the latter is text on black background, 'prime' when using irrelivant synthetic text, prime is always unalighned and independent from the scene-text images
+opt.use_whollyG = False # use an optimizer on top of the GAN to learn the lambda's of the losses
 # Loss weights
-opt.lambda_cyc = 10
-opt.lambda_cycle_B = 2 # default is 1 
-opt.lambda_id = 0.5 * opt.lambda_cyc
-if opt.use_F1_loss:    
-    opt.lambda_id_B = 10  # default is 1
-else: opt.lambda_id_B = 2  # defatul is 1
+#opt.lambda_cyc = 10
+#opt.lambda_cycle_B = 2 # default is 1 
+#opt.lambda_id = 0.5 * opt.lambda_cyc
+#if opt.use_F1_loss:    
+#    opt.lambda_id_B = 10  # default is 1
+#else: opt.lambda_id_B = 2  # defatul is 1
 
-
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+lambda_cycle_A = torch.tensor(10, dtype=torch.float32, requires_grad=True).to(device)
+lambda_cycle_B = torch.tensor(50, dtype=torch.float32, requires_grad=True).to(device)
+lambda_id_A = torch.tensor(10, dtype=torch.float32, requires_grad=True).to(device)
+lambda_id_B = torch.tensor(50, dtype=torch.float32, requires_grad=True).to(device)
+lambda_GAN_BA = torch.tensor(0.5, dtype=torch.float32, requires_grad=True).to(device) 
 
 
 
@@ -106,6 +114,8 @@ G_AB = GeneratorResNet(res_blocks=opt.n_residual_blocks)
 G_BA = GeneratorResNet(res_blocks=opt.n_residual_blocks)
 D_A = Discriminator()
 D_B = Discriminator()
+
+
 
 if cuda:
     G_AB = G_AB.cuda()
@@ -154,10 +164,88 @@ fake_A_buffer = ReplayBuffer()
 fake_B_buffer = ReplayBuffer()
 
 
+##############################
+#        loss optimizer
+##############################
+        
+''' Lambda's of loss optimizer 
+
+Then, after extracting the weights from the net we have loss_G, as follows:
+    
+'''
+
+if opt.use_whollyG:
+    model_whollyG = torch.nn.Sequential(torch.nn.Linear(5, 1, bias=True).to(device))
+    
+    lr_whollyG = 0.001
+    optimizer_whollyG = torch.optim.Adam(model_whollyG.parameters(), lr=lr_whollyG)
+    loss_whollyG = torch.nn.MSELoss(reduction='sum')
+# model_whollyG.weight  # model weights
+
+
+
+model_classify = torchvis_models.resnet18(pretrained=True)
+model_classify.fc = torch.nn.Linear(8192, 1) #2048 for 256x256 image
+model_classify.aux_logits = False
+model_classify = model_classify.to(device)
+lr_classify = 0.001
+optimizer_classify = torch.optim.Adam(model_classify.parameters(), lr=lr_classify)
+criterion_classify = torch.nn.CrossEntropyLoss(reduction='sum')  
+criterion_classify_labeling = torch.nn.L1Loss() # reduction=None)  
+
+def train_model_classify(no_epochs):    
+    model_classify.train()
+    for epoch_ in range(1, no_epochs):
+        for i, batch in enumerate(dataloader):
+            real_B = Variable(batch['B'].type(Tensor)) #this is real_B_pos
+            ''' +ve phase '''
+            real_A = Variable(batch['A'].type(Tensor))                    
+            B_pos = G_AB(real_A)             
+            optimizer_classify.zero_grad()
+            output = model_classify(B_pos)  
+            target = criterion_classify_labeling(B_pos-real_B)
+            loss_B = criterion_classify(output-target)
+            loss_B.backward()
+            optimizer_classify.step(B_pos - real_B)
+            ''' -ve phase '''
+            real_A_neg = Variable(batch['A_neg'].type(Tensor))
+            B_neg = G_AB(real_A_neg) 
+            optimizer_classify.zero_grad()
+            output = model_classify(B_neg)  
+            target = criterion_classify_labeling(B_neg-real_B)
+            loss_Bneg = criterion_classify(output-real_B) # do we need a real_B_neg?
+            loss_Bneg.backward()
+            optimizer_classify.step()
+        
+        
+def test_model_classify():  
+     model_classify.eval()
+     with torch.no_grad():
+        for batch_idx, batch in enumerate(val_dataloader):            
+            real_A_pos = batch['A'].type(Tensor)
+            GAN_B_pos = G_AB(real_A_pos)             
+            real_A_neg = batch['A_neg'].type(Tensor)
+            GAN_B_neg = G_AB(real_A_neg) 
+            real_B_pos = batch['B'].type(Tensor) # maybe we need real_B_neg 
+            out_B_pos =  model_classify(GAN_B_pos)
+            out_B_neg =  model_classify(GAN_B_neg)
+            # now, compare the two outputs to infer the best
+            # based on the lowest value
+            
+            
+            
+            
+            
+     
+
+
+
 # ----------
 #  Training
 # ----------
 
+loss_of_id_A = []
+loss_of_id_B = []
 prev_time = time.time()
 for epoch in range(opt.epoch, opt.n_epochs):
     for i, batch in enumerate(dataloader):
@@ -179,31 +267,46 @@ for epoch in range(opt.epoch, opt.n_epochs):
         # Identity loss
         loss_id_A = criterion_identity_A(G_BA(real_A), real_A)
         loss_id_B = criterion_identity_B(G_AB(real_B), real_B)
-        loss_identity = loss_id_A + opt.lambda_id_B*loss_id_B
-
+        
         # GAN loss
         fake_B = G_AB(real_A)
         loss_GAN_AB = criterion_GAN(D_B(fake_B), valid)
         fake_A = G_BA(real_B)
         loss_GAN_BA = criterion_GAN(D_A(fake_A), valid)
-        loss_GAN = loss_GAN_AB + loss_GAN_BA
+        
 
         # Cycle loss
         recov_A = G_BA(fake_B)
         loss_cycle_A = criterion_cycle(recov_A, real_A)
         recov_B = G_AB(fake_A)
         loss_cycle_B = criterion_cycle(recov_B, real_B)
-        loss_cycle = loss_cycle_A +  opt.lambda_cycle_B*loss_cycle_B
-
+        
+        if not opt.use_whollyG:
         # Total loss
-        loss_G =   ( loss_GAN + 
-                    opt.lambda_cyc * loss_cycle + 
-                    opt.lambda_id * loss_identity ) 
-
-        loss_G.backward()
-        optimizer_G.step()
-        
-        
+            loss_G = ( 
+                    loss_GAN_AB + 
+                    lambda_GAN_BA * loss_GAN_BA +                
+                    lambda_cycle_A * loss_cycle_A + 
+                    lambda_cycle_B * loss_cycle_B +
+                    lambda_id_A * loss_id_A +
+                    lambda_id_B * loss_id_B 
+                    ) /6
+    
+            loss_G.backward()
+            optimizer_G.step()        
+        else:            
+            optimizer_whollyG.zero_grad()
+            loss_in = torch.stack(
+                    (loss_GAN_AB, loss_GAN_BA, 
+                     loss_cycle_A, loss_cycle_B, 
+                     loss_id_A))
+            loss_out = model_whollyG(loss_in)
+            # loss_whollyG = torch.abs(loss_out - loss_GAN_AB)
+            loss_whollyG = loss_out**2 +  loss_id_B
+            loss_whollyG.backward()
+            optimizer_whollyG.step()
+            loss_G = loss_whollyG  # although should be loss_out
+            
 
         ''' -----------------------
            Train Discriminator A
@@ -238,8 +341,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
 
         loss_D_B.backward()
         optimizer_D_B.step()
-
-        loss_D = (loss_D_A + loss_D_B) / 2
+        
 
         # --------------
         #  Log Progress
@@ -253,14 +355,30 @@ for epoch in range(opt.epoch, opt.n_epochs):
 
         # Print log
         if not i % opt.show_progress_every_n_iterations:
-            sys.stdout.write("\r[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f, adv: %f, cycle: %f, identity: %f] ETA(time-left): %s" %
-                                                            (epoch, opt.n_epochs,
-                                                            i, len(dataloader),
-                                                            loss_D.item(), 
-                                                            loss_G.item(),
-                                                            loss_GAN.item(), 
-                                                            loss_cycle.item(),
-                                                            loss_identity.item(), time_left))
+            sys.stdout.write(
+                '\r[Epoch %d/%d] [Batch %d/%d],'
+                '[D loss: %f],'
+                '[ G loss: %f,'
+                ' adv_AB: %f,' 
+                ' adv_BA:%f,' 
+                ' cycle_A: %f,'
+                ' cycle_B: %f,'
+                ' identity_A: %f,'
+                ' identity_B: %f],'
+                ' ETA(time-left): %s' % (
+                epoch, opt.n_epochs, i, len(dataloader),
+                (loss_D_A + loss_D_B).item()/2, 
+                loss_G.item(),
+                loss_GAN_AB.item(),
+                loss_GAN_BA.item(), 
+                loss_cycle_A.item(),
+                loss_cycle_B.item(),
+                loss_id_A.item(), 
+                loss_id_B.item(), 
+                time_left) 
+                )
+                        
+        
             
         # If at sample interval save image
         if not batches_done % opt.sample_interval:            
@@ -268,6 +386,9 @@ for epoch in range(opt.epoch, opt.n_epochs):
                           G_AB, Tensor, opt, use_max=True) # another instance
 
 
+    # saving loss values
+    loss_of_id_A.append(loss_id_A.cpu().data.detach().numpy().tolist()) 
+    loss_of_id_B.append(loss_id_B.cpu().data.detach().numpy().tolist()) 
     # Update learning rates
     lr_scheduler_G.step()
     lr_scheduler_D_A.step()
@@ -282,12 +403,19 @@ for epoch in range(opt.epoch, opt.n_epochs):
     if not epoch % opt.test_interval:
         test_performance(Tensor, val_dataloader, G_AB,
                                   criterion_identity_testing, use_max=False)
+        test_performance(Tensor, val_dataloader, G_AB,
+                                  criterion_identity_testing, use_max=True)
 
 test_performance(Tensor, val_dataloader, G_AB,
                                   criterion_identity_testing, use_max=False)
+test_performance(Tensor, val_dataloader, G_AB,
+                                  criterion_identity_testing, use_max=True)
+
 if generate_all_test_images:
     for batch_idx, imgs in enumerate(val_dataloader):
-        sample_images(imgs, batch_idx, use_max=True) # another instance
+        sample_images(imgs, batch_idx, G_AB, Tensor, opt, use_max=False) # another instance
+        
+        
     
     
     
