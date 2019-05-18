@@ -45,8 +45,8 @@ def color_mapping_cv2(img):
 
 class ImageDataset(Dataset):
     def __init__(self, root, transform=None, aligned=True, mode='train', 
-                 data_mode = 'black', p_color_augment=0, p_RGB2BGR_augment=0, 
-                 p_invert_augment=0, use_B_prime=False):
+                 data_mode = '', p_color_augment=0, p_RGB2BGR_augment=0, 
+                 p_invert_augment=0):
         '''Args-
         gt=True, loads the white Ground Truth pixel level text, if False, use the colored  
         p_color_augment: The probability used to do color augmentation, if p is 0, no augmentaion is 
@@ -58,52 +58,41 @@ class ImageDataset(Dataset):
         self.aligned = aligned
         self.p_color_augment = p_color_augment
         self.p_RGB2BGR_augment = p_RGB2BGR_augment
-        self.p_invert_augment = p_invert_augment
-        self.use_B_prime = use_B_prime # use images not related to A folder, only in training
-        self.data_mod = data_mode
-        
+        self.p_invert_augment = p_invert_augment        
+        self.data_mode = data_mode
+        folder_name = '%s/B'+ data_mode
         self.files_A = sorted(glob.glob(os.path.join(root, '%s/A' % mode) + '/*.*'))
-        if self.use_B_prime: 
-            self.files_B_prime = sorted(glob.glob(os.path.join(root, '%s/B_prime' % mode) + '/*.*'))
-        if data_mode=='black':
-            self.files_B = sorted(glob.glob(os.path.join(root, '%s/B' % mode) + '/*.*'))
-        elif data_mode =='lime':
-            self.files_B = sorted(glob.glob(os.path.join(root, '%s/B_lime' % mode) + '/*.*'))
-        else: #B_gt denotes wihte text on black background
-            self.files_B = sorted(glob.glob(os.path.join(root, '%s/B_gt' % mode) + '/*.*'))
-                              
+        self.files_B = sorted(glob.glob(os.path.join(root, folder_name % mode) + '/*.*'))
+                                                
 
     def __getitem__(self, index):
-        item_A = Image.open(self.files_A[index % len(self.files_A)])                       
-        if self.use_B_prime and self.mode=='train':
-            item_B_prime = Image.open(self.files_B_prime[random.randint(0, len(self.files_B_prime) - 1)])            
-        else: 
-            if self.aligned:
-                item_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)])            
-            else:
-                item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image
-            
-        if self.mode == 'train':
+        item_A = Image.open(self.files_A[index % len(self.files_A)])                                
+        if self.aligned:
+            item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image            
+        else:            
+            item_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)])            
+        
+        if self.mode == 'train' and self.data_mode != 'lime' :
             if np.random.rand() < self.p_RGB2BGR_augment: # will not run when p_RGB2BGR_augment=0
-                item_A = color_mapping_cv2(item_A)
-                if not self.use_B_prime:               
-                    item_B = color_mapping_cv2(item_B)                                                        
-                else: item_B = item_B_prime 
+                item_A = color_mapping_cv2(item_A)                
+                item_B = color_mapping_cv2(item_B)                                                                        
             if np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
-                item_A = PIL_invert(item_A)  
-                if not self.use_B_prime:                    
-                    item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                
-                else: item_B = item_B_prime
-            elif self.use_B_prime: item_B = item_B_prime
-            
-                                                    
-        item_A_neg = self.transform(PIL_invert(item_A)) # this will only be used in validation        
+                item_A = PIL_invert(item_A)                  
+                item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
+        
+        if self.data_mode =='gt': item_B_neg = item_B # no need to invert here
+        else: item_B_neg = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
+        
+        # transformation
+        item_A_neg = self.transform(PIL_invert(item_A)) # this will only be used in validation                
         item_B = self.transform(item_B)
-        item_A = self.transform(item_A)
+        item_A = self.transform(item_A) 
+        item_B_neg= self.transform(item_B_neg)
         
         return {'A': item_A, 
                 'A_neg': item_A_neg,
-                'B': item_B }
+                'B': item_B,
+                'B_neg': item_B_neg}
 
     def __len__(self):
         return max(len(self.files_A), len(self.files_B))
