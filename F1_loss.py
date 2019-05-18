@@ -110,6 +110,7 @@ def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):
     Fn = torch.sum(Fn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()    
         
     F1 = 1 - 2*(Tp + epsilon)/(2*Tp+Fp+Fn - epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
+    # the minus sign in the dominator will ensure that F1 is 3 when there is a zero division
     
     if reduce == True:        
         F1 = F1.mean()
