@@ -26,27 +26,24 @@ def reason_images(fake_B_pos, fake_B_neg):
 
 
 
-def test_performance(Tensor, val_dataloader, G_AB,
-                                  criterion_testing, use_max=False):
+def test_performance(Tensor, val_dataloader, G_AB, 
+                                  criterion_testing):
     ''' Calculates the overall identitiy loss of the test set '''
-    loss_id_B = 0; loss_id_B_max=0
+    loss_id_B = 0
     with torch.no_grad():
         for batch_idx, imgs in enumerate(val_dataloader):            
-            real_A_pos = imgs['A'].type(Tensor)
-            fake_B_pos = G_AB(real_A_pos) 
             real_B_pos = imgs['B'].type(Tensor)       
-            loss_id_B += criterion_testing(fake_B_pos, real_B_pos)
+            real_A_pos = imgs['A'].type(Tensor)            
+            GAN_B_pos = G_AB(real_A_pos)                         
+            real_A_neg = imgs['A_neg'].type(Tensor)
+            GAN_B_neg = G_AB(real_A_neg)             
             
-            if use_max:
-                real_A_neg = imgs['A_neg'].type(Tensor)
-                fake_B_neg = G_AB(real_A_neg)             
-                fake_B_neg = reason_images(fake_B_pos, fake_B_neg)                
-                loss_id_B_max += criterion_testing(fake_B_neg, real_B_pos) # between max and neg
-    
-    if use_max: 
-        print('max(neg, pos) Identity L1 evaluation all testing samples', loss_id_B_max.item()/len(val_dataloader.dataset))
-    else:
-        print('Identity L1 evaluation all testing samples', loss_id_B.item()/len(val_dataloader.dataset))
+            fake_B_neg = reason_images(GAN_B_pos, GAN_B_neg)                
+            
+            loss_id_B += criterion_testing(GAN_B_pos, real_B_pos)
+            
+       
+    print('Identity L1 evaluation all testing samples', loss_id_B.item()/len(val_dataloader.dataset))
     
 
 
@@ -112,7 +109,7 @@ def get_loaders(opt):
                            data_mode = opt.data_mode,                           
                            p_RGB2BGR_augment= opt.p_RGB2BGR_augment, 
                            p_invert_augment=opt.p_invert_augment, 
-                           use_B_prime = opt.use_B_prime
+                           
                            ), 
                     batch_size=opt.batch_size, 
                     shuffle=True,  
