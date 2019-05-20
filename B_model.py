@@ -3,7 +3,7 @@
 """
 Created on Fri May 17 11:41:03 2019
 
-@author: malrawi
+@author: Mohammed Al-Rawi
 """
 
 def binarize_tensor(img):
@@ -16,10 +16,9 @@ def binarize_tensor(img):
     
 def get_loss_of_B_classify(real_A, real_B): # item is a string 'A', 'A_neg' of the sample     
     optimizer_classify.zero_grad()
-    B_ = G_AB(real_A).detach()                 
-    output = B_classify(B_)  
-    # target = criterion_classify_labeling(B_, real_B) # we can threshold B_pos and real_B here
-    target = criterion_classify_labeling(binarize_tensor(B_), binarize_tensor(real_B)) # we can threshold B_pos and real_B here
+    B_ = binarize_tensor(G_AB(real_A).detach())                 
+    output = B_classify(B_)      
+    target = criterion_classify_labeling(B_, binarize_tensor(real_B)) # we can threshold B_pos and real_B here
     loss_B = criterion_classify(output, target)
     return loss_B
 
@@ -28,21 +27,25 @@ def train_B_classify(no_epochs):
     B_classify.train()
     loss_of_model = []    
     # time.sleep(1);   # pbar = tqdm(total=no_epochs);     # time.sleep(1)    
+    loss  = None
     for epoch_ in range(1, no_epochs):
+        
+        ''' scheduler.step()  ''' # we need to add this later
         total_loss = 0
-        # pbar.update(1)   
-        print('.', end='')
+        # pbar.update(1)
         for i, batch in enumerate(dataloader):
-            real_B = batch['B'].type(Tensor).to(device) # +ve Ground Truth
+            real_B_pos = batch['B'].type(Tensor).to(device) # +ve Ground Truth
             real_B_neg = batch['B_neg'].type(Tensor).to(device) #  -ve Ground Truth
-            loss_B_pos = get_loss_of_B_classify(batch['A'].type(Tensor).to(device), real_B) #  ''' -ve phase '''                     
+            loss_B_pos = get_loss_of_B_classify(batch['A'].type(Tensor).to(device), 
+                                                real_B_pos) #  ''' +ve phase '''                     
             loss_B_neg = get_loss_of_B_classify(batch['A_neg'].type(Tensor).to(device), 
-                                                real_B_neg) #  ''' +ve phase pass '''            
+                                                real_B_neg) #  ''' -ve phase pass '''            
             loss = (loss_B_pos+loss_B_neg)/2            
             loss.backward()
             optimizer_classify.step()
             total_loss += loss.cpu().data.detach().numpy().tolist()
-            
+        
+        print(', ', total_loss/len(dataloader.dataset), end='')    
         loss_of_model.append(total_loss/len(dataloader.dataset))
             
             # should we add loss_B to loss_Bneg and use one backward and step?
@@ -57,9 +60,9 @@ def test_B_classify(test_loss, test_dataloader):
            real_A_pos = batch['A'].type(Tensor)           
            real_A_neg = batch['A_neg'].type(Tensor)  
            GAN_B_pos =  G_AB(real_A_pos).detach() 
-           GAN_B_neg = G_AB(real_A_pos).detach()            
-           out_B_pos =  B_classify(GAN_B_pos).detach()
-           out_B_neg =  B_classify(GAN_B_neg).detach()
+           GAN_B_neg = G_AB(real_A_neg).detach()            
+           out_B_pos =  B_classify(binarize_tensor(GAN_B_pos)).detach() # if we do thresholding in training, we should do it here
+           out_B_neg =  B_classify(binarize_tensor(GAN_B_neg)).detach()
            if out_B_neg<out_B_pos:  
                B_good = GAN_B_neg
            else: B_good = GAN_B_pos
@@ -67,19 +70,22 @@ def test_B_classify(test_loss, test_dataloader):
            
            img_sample = torch.cat(
                    (real_A_pos.data, 
-                    real_B.data,                      
-                    B_good.data, 
-                    binarize_tensor(B_good),
-                    
+                    real_B.data,                    
+                    binarize_tensor(GAN_B_pos).data,
+                    binarize_tensor(GAN_B_neg).data,
+                    B_good.data,
+                    binarize_tensor(B_good).data                    
                     ),  
                     0)
                                   
            save_image(img_sample, 'images/%s/%s.png' % 
-                      (opt.dataset_name, batch_idx), nrow=1, normalize=True)        
+                      (opt.dataset_name, batch_idx), nrow=6, normalize=True)        
                          
     model_id = 1
     torch.save(B_classify.state_dict(), 'saved_models/%s/model_classify_%d.pth' % (opt.dataset_name, model_id))            
     return loss/len(test_dataloader.dataset)
+
+
 
 my_loss = train_B_classify(100)
 test_performance = test_B_classify(criterion_classify, val_dataloader) 
