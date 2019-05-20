@@ -50,7 +50,7 @@ generate_all_test_images = True
 
 # opt.lr=0.00001
 opt.epoch= 0  # to load previous models, use more than 0
-opt.n_epochs = 3
+opt.n_epochs = 200
 opt.batch_test_size = 1
 opt.seed_value = 12345
 opt.decay_epoch= 100  if opt.n_epochs>100 else opt.n_epochs//2
@@ -62,7 +62,7 @@ opt.show_progress_every_n_iterations= 20
 opt.AMS_grad = True
 opt.sample_interval = 1000
 opt.test_interval = 10
-opt.checkpoint_interval = 200
+opt.checkpoint_interval = 150
 opt.p_RGB2BGR_augment = 0#  0.5 # .25 # 0 indicates no change to the 
 opt.p_invert_augment = 0#  0.5 # .25
 opt.aligned = True
@@ -193,70 +193,16 @@ if opt.use_whollyG:
 # model_whollyG.weight  # model weights
 
 
-
+lr_classify = 0.01
 B_classify = torchvis_models.resnet18(pretrained=True)
 B_classify.fc = torch.nn.Linear(2048, 1) #2048 for 256x256 image
 B_classify.aux_logits = False
 B_classify = B_classify.to(device)
-lr_classify = 0.001
 optimizer_classify = torch.optim.Adam(B_classify.parameters(), lr=lr_classify)
-criterion_classify_labeling = torch.nn.L1Loss(reduction='sum') # reduction=None)  
-criterion_classify = torch.nn.L1Loss(reduction='sum')
-
-def train_model_classify(no_epochs):    
-    B_classify.train()
-    for epoch_ in range(1, no_epochs):
-        print(epoch_, end='')
-        for i, batch in enumerate(dataloader):
-            real_B = batch['B'].type(Tensor).to(device)
-            real_B_neg = batch['B_neg'].type(Tensor).to(device)
-            ''' +ve phase '''
-            real_A = batch['A'].type(Tensor).to(device)
-            B_pos = G_AB(real_A).detach()             
-            optimizer_classify.zero_grad()
-            output = B_classify(B_pos)  
-            target = criterion_classify_labeling(B_pos, real_B)
-            loss_B = criterion_classify(output, target)
-            loss_B.backward() 
-            optimizer_classify.step()
-            ''' -ve phase '''
-            real_A_neg = Variable(batch['A_neg'].type(Tensor))
-            B_neg = G_AB(real_A_neg).detach() 
-            optimizer_classify.zero_grad()
-            output = B_classify(B_neg)  
-            target_neg = criterion_classify_labeling(B_neg, real_B_neg)
-            loss_Bneg = criterion_classify(output, target_neg) # do we need a real_B_neg?
-            loss_Bneg.backward()
-            optimizer_classify.step()
-        
-        
-def test_model_classify(test_loss, test_dataloader):  
-    threshold = 0    
-    loss = 0 
-    B_classify.eval()
-    with torch.no_grad():
-       for batch_idx, batch in enumerate(test_dataloader):            
-           real_B = batch['B'].type(Tensor) # since we are thresholding, there is no difference between B and B_neg
-           real_A_pos = batch['A'].type(Tensor)
-           GAN_B_pos = G_AB(real_A_pos)             
-           real_A_neg = batch['A_neg'].type(Tensor)
-           GAN_B_neg = G_AB(real_A_neg)             
-           out_B_pos =  B_classify(GAN_B_pos)
-           out_B_neg =  B_classify(GAN_B_neg)
-           if out_B_pos< out_B_neg:
-               B_good = out_B_pos
-           else: B_good = out_B_neg           
-           loss += test_loss(real_B>threshold, B_good>threshold)  
-           img_sample = torch.cat((real_A.data, real_B.data, B_good.data, 
-                                   (B_good>threshold).data), 0)
-           save_image(img_sample, 'images/%s/%s.png' % 
-                      (opt.dataset_name, batch_idx), nrow=5, normalize=True)        
-                         
-                
-    return loss/len(test_dataloader.dataset)
-            
-     
-
+criterion_classify_labeling = torch.nn.L1Loss() 
+criterion_classify = torch.nn.L1Loss()
+scheduler_B = torch.optim.lr_scheduler.MultiStepLR(optimizer_classify, 
+                                                   milestones=[100, 200, 300] , gamma= 0.1)           
 
 
 # ----------
@@ -424,9 +370,11 @@ for epoch in range(opt.epoch, opt.n_epochs):
                                   criterion_identity_testing)
 
  
-train_model_classify(10)     
+print('\n ................. Training the +ve vs. -ve  B classifier .............')
+train_model_classify(100)     
    
-test_model_classify(criterion_identity_testing, val_dataloader) 
+test_performance = test_model_classify(criterion_classify, val_dataloader) 
+print(test_performance)
 #test_performance(Tensor, val_dataloader, G_AB,
 #                                  criterion_identity_testing)
 
