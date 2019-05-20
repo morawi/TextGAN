@@ -81,6 +81,8 @@ def random_seeding(seed_value, state, cuda_rng_state, cuda):
     random.seed(seed_value)    
     torch.random.initial_seed()    
     torch.manual_seed(seed_value)   
+#    torch.backends.cudnn.enabled=False
+#    torch.backends.cudnn.deterministic=True
     
     if cuda: 
         torch.cuda.manual_seed_all(seed_value)
@@ -122,7 +124,7 @@ def get_loaders(opt):
                             data_mode = opt.data_mode,
                             ),
                             batch_size=opt.batch_test_size, 
-                            shuffle=True, 
+                            shuffle=False, 
                             num_workers=1                            
                             )
     
