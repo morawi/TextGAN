@@ -7,7 +7,7 @@ Created on Fri May 17 11:41:03 2019
 """
 
 def binarize_tensor(img):
-    thresh_val = img.mean()    
+    thresh_val = .5*img.mean()    
     img = (img>thresh_val).float()*1       
     img = 2*img-1
     
@@ -18,19 +18,20 @@ def get_loss_of_B_classify(real_A, real_B): # item is a string 'A', 'A_neg' of t
     optimizer_classify.zero_grad()
     B_ = binarize_tensor(G_AB(real_A).detach())                 
     output = B_classify(B_)      
-    target = criterion_classify_labeling(B_, binarize_tensor(real_B)) # we can threshold B_pos and real_B here
+    target = criterion_classify_labeling(B_, binarize_tensor(real_B)) 
     loss_B = criterion_classify(output, target)
     return loss_B
 
 def train_B_classify(no_epochs):    
     print('Training B-Classifier')    
     B_classify.train()
-    loss_of_model = []    
+    loss_of_model = []  
+    
     # time.sleep(1);   # pbar = tqdm(total=no_epochs);     # time.sleep(1)    
     loss  = None
     for epoch_ in range(1, no_epochs):
         
-        ''' scheduler.step()  ''' # we need to add this later
+        scheduler_B.step()
         total_loss = 0
         # pbar.update(1)
         for i, batch in enumerate(dataloader):
@@ -40,15 +41,17 @@ def train_B_classify(no_epochs):
                                                 real_B_pos) #  ''' +ve phase '''                     
             loss_B_neg = get_loss_of_B_classify(batch['A_neg'].type(Tensor).to(device), 
                                                 real_B_neg) #  ''' -ve phase pass '''            
-            loss = (loss_B_pos+loss_B_neg)/2            
+            
+            loss =  torch.min(loss_B_pos, loss_B_neg) / (
+                    torch.max(loss_B_pos, loss_B_neg)+ 1)           
+
             loss.backward()
             optimizer_classify.step()
             total_loss += loss.cpu().data.detach().numpy().tolist()
         
         print(', ', total_loss/len(dataloader.dataset), end='')    
-        loss_of_model.append(total_loss/len(dataloader.dataset))
+        loss_of_model.append(total_loss/len(dataloader.dataset))            
             
-            # should we add loss_B to loss_Bneg and use one backward and step?
     return loss_of_model
 
 def test_B_classify(test_loss, test_dataloader):      
@@ -66,27 +69,41 @@ def test_B_classify(test_loss, test_dataloader):
            if out_B_neg<out_B_pos:  
                B_good = GAN_B_neg
            else: B_good = GAN_B_pos
+                   
            loss += test_loss(real_B,  B_good)
+           x = G_AB( G_AB(GAN_B_pos) + G_AB(GAN_B_neg ) )
            
            img_sample = torch.cat(
-                   (real_A_pos.data, 
-                    real_B.data,                    
-                    binarize_tensor(GAN_B_pos).data,
-                    binarize_tensor(GAN_B_neg).data,
-                    B_good.data,
-                    binarize_tensor(B_good).data                    
+                   (real_A_pos, 
+                    real_B, 
+                    GAN_B_pos,
+                    GAN_B_neg,                   
+                    G_AB(GAN_B_pos),
+                    G_AB(GAN_B_neg),
+                    x                    
                     ),  
                     0)
                                   
            save_image(img_sample, 'images/%s/%s.png' % 
-                      (opt.dataset_name, batch_idx), nrow=6, normalize=True)        
+                      (opt.dataset_name, batch_idx), nrow=7, normalize=True)        
                          
     model_id = 1
     torch.save(B_classify.state_dict(), 'saved_models/%s/model_classify_%d.pth' % (opt.dataset_name, model_id))            
     return loss/len(test_dataloader.dataset)
 
 
+#lr_classify = 0.01
+#B_classify = torchvis_models.resnet18(pretrained=True)
+#B_classify.fc = torch.nn.Linear(2048, 1) #2048 for 256x256 image
+#B_classify.aux_logits = False
+#B_classify = B_classify.to(device)
+#optimizer_classify = torch.optim.Adam(B_classify.parameters(), lr=lr_classify)
+#criterion_classify_labeling = torch.nn.L1Loss() 
+#criterion_classify = torch.nn.L1Loss()
+#scheduler_B = torch.optim.lr_scheduler.MultiStepLR(optimizer_classify, 
+#                                                   milestones=[50, 150, 300] , gamma= 0.1)     
 
-my_loss = train_B_classify(100)
+
+# my_loss = train_B_classify(100)
 test_performance = test_B_classify(criterion_classify, val_dataloader) 
-print(test_performance)
+print(test_performance.item())
