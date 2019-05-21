@@ -50,7 +50,8 @@ generate_all_test_images = True
 
 # opt.lr=0.00001
 opt.epoch= 0  # to load previous models, use more than 0
-opt.n_epochs = 200
+opt.n_epochs = 620
+opt.batch_size = 3
 opt.batch_test_size = 1
 opt.seed_value = 12345
 opt.decay_epoch= 100  if opt.n_epochs>100 else opt.n_epochs//2
@@ -58,13 +59,12 @@ opt.img_width= 256
 opt.img_height= 256
 opt.dataset_name = 'text_segmentation'+str(opt.img_width)# 'synthtext'
 opt.show_progress_every_n_iterations= 20  
-
 opt.AMS_grad = True
 opt.sample_interval = 1000
 opt.test_interval = 10
 opt.checkpoint_interval = 150
-opt.p_RGB2BGR_augment = 0#  0.5 # .25 # 0 indicates no change to the 
-opt.p_invert_augment = 0#  0.5 # .25
+opt.p_RGB2BGR_augment = 0.5 # .25 # 0 indicates no change to the 
+opt.p_invert_augment =  0.5 # .25
 opt.aligned = True
 opt.use_F1_loss = False
 opt.use_whollyG = False # use an optimizer on top of the GAN to learn the lambda's of the losses
@@ -96,11 +96,11 @@ lambda_GAN_BA = torch.tensor(0.5, dtype=torch.float32, requires_grad=True).to(de
 ''''''''''''' Main Program'''''''''''''''''''
 print('\n Experiment parameters', opt, '\n') 
 cuda = True if torch.cuda.is_available() else False
-dataloader, val_dataloader = get_loaders(opt)
 random_seeding(opt.seed_value, 
                torch.get_rng_state(), 
                torch.cuda.get_rng_state(), cuda)        
 
+dataloader, val_dataloader = get_loaders(opt)
 # Create sample and checkpoint directories
 os.makedirs('images/%s' % opt.dataset_name, exist_ok=True)
 os.makedirs('saved_models/%s' % opt.dataset_name, exist_ok=True)
@@ -116,16 +116,12 @@ else:
 
 criterion_identity_testing = torch.nn.L1Loss() # F1_loss_prime   
 
-# Calculate output of image discriminator (PatchGAN)
-patch = (1, opt.img_height // 2**4, opt.img_width // 2**4)
 
 # Initialize generator and discriminator
 G_AB = GeneratorResNet(res_blocks=opt.n_residual_blocks)
 G_BA = GeneratorResNet(res_blocks=opt.n_residual_blocks)
 D_A = Discriminator()
 D_B = Discriminator()
-
-
 
 if cuda:
     G_AB = G_AB.cuda()
@@ -167,42 +163,31 @@ lr_scheduler_G = torch.optim.lr_scheduler.LambdaLR(optimizer_G, lr_lambda=Lambda
 lr_scheduler_D_A = torch.optim.lr_scheduler.LambdaLR(optimizer_D_A, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
 lr_scheduler_D_B = torch.optim.lr_scheduler.LambdaLR(optimizer_D_B, lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
 
-Tensor = torch.cuda.FloatTensor if cuda else torch.Tensor
 
+##############################
+#        loss optimizer Model: 
+##############################        
+''' Lambda's of loss optimizer 
+Then, after extracting the weights from the net we have loss_G, as follows:
+model_whollyG.weight  
+to obtain the Lambdas    
+'''
+if opt.use_whollyG:
+    lr_whollyG = 0.001; No_Lambdas = 5
+    model_whollyG = torch.nn.Sequential(torch.nn.Linear(No_Lambdas, 1, bias=True).to(device))        
+    optimizer_whollyG = torch.optim.Adam( 
+            itertools.chain( G_AB.parameters(), G_BA.parameters(), model_whollyG.parameters() )
+            , lr=lr_whollyG, betas=(opt.b1, opt.b2), amsgrad=opt.AMS_grad)
+    loss_whollyG = torch.nn.MSELoss()
+
+
+Tensor = torch.cuda.FloatTensor if cuda else torch.Tensor
 # Buffers of previously generated samples
 fake_A_buffer = ReplayBuffer()
 fake_B_buffer = ReplayBuffer()
+# Calculate output of image discriminator (PatchGAN)
+patch = (1, opt.img_height // 2**4, opt.img_width // 2**4)
 
-
-##############################
-#        loss optimizer
-##############################
-        
-''' Lambda's of loss optimizer 
-
-Then, after extracting the weights from the net we have loss_G, as follows:
-    
-'''
-
-if opt.use_whollyG:
-    model_whollyG = torch.nn.Sequential(torch.nn.Linear(5, 1, bias=True).to(device))
-    
-    lr_whollyG = 0.001
-    optimizer_whollyG = torch.optim.Adam(model_whollyG.parameters(), lr=lr_whollyG)
-    loss_whollyG = torch.nn.MSELoss(reduction='sum')
-# model_whollyG.weight  # model weights
-
-
-lr_classify = 0.01
-B_classify = torchvis_models.resnet18(pretrained=True)
-B_classify.fc = torch.nn.Linear(2048, 1) #2048 for 256x256 image
-B_classify.aux_logits = False
-B_classify = B_classify.to(device)
-optimizer_classify = torch.optim.Adam(B_classify.parameters(), lr=lr_classify)
-criterion_classify_labeling = torch.nn.L1Loss() 
-criterion_classify = torch.nn.L1Loss()
-scheduler_B = torch.optim.lr_scheduler.MultiStepLR(optimizer_classify, 
-                                                   milestones=[100, 200, 300] , gamma= 0.1)           
 
 
 # ----------
@@ -264,10 +249,11 @@ for epoch in range(opt.epoch, opt.n_epochs):
             loss_in = torch.stack(
                     (loss_GAN_AB, loss_GAN_BA, 
                      loss_cycle_A, loss_cycle_B, 
-                     loss_id_A))
+                     loss_id_A, loss_id_B)
+                    )
             loss_out = model_whollyG(loss_in)
             # loss_whollyG = torch.abs(loss_out - loss_GAN_AB)
-            loss_whollyG = loss_out**2 +  loss_id_B
+            loss_whollyG = loss_out # (loss_out**2 +  loss_id_B)/2
             loss_whollyG.backward()
             optimizer_whollyG.step()
             loss_G = loss_whollyG  # although should be loss_out
@@ -371,7 +357,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
 
  
 print('\n ................. Training the +ve vs. -ve  B classifier .............')
-train_model_classify(100)     
+# train_model_classify(100)     
    
 test_performance = test_model_classify(criterion_classify, val_dataloader) 
 print(test_performance)
