@@ -6,12 +6,7 @@ Created on Fri May 17 11:41:03 2019
 @author: Mohammed Al-Rawi
 """
 
-def binarize_tensor(img):
-    thresh_val = .5*img.mean()    
-    img = (img>thresh_val).float()*1       
-    img = 2*img-1
-    
-    return img
+from misc_functions import binarize_tensor
     
     
 def get_loss_of_B_classify(real_A, real_B): # item is a string 'A', 'A_neg' of the sample     
