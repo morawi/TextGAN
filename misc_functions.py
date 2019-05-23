@@ -14,6 +14,13 @@ import numpy as np
 from numpy import random
 
 
+def binarize_tensor(img):
+    thresh_val = img.mean()    
+    img = (img>thresh_val).float()*1       
+    img = 2*img-1
+    
+    return img
+
 
 # choosing the best output between the positive and negative
 def reason_images(fake_B_pos, fake_B_neg):
@@ -56,21 +63,20 @@ def sample_images(imgs, batches_done, G_AB, Tensor, opt, use_max=False):
     fake_B_neg = G_AB(real_A_neg)    
     
     img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
-                            real_A_neg.data, fake_B_neg.data), 0)
-    save_image(img_sample, 'images/%s/%s.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)        
-    
-    if use_max:
-        fake_B_neg = reason_images(fake_B_pos, fake_B_neg)        
-        img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
-                        real_A_neg.data, fake_B_neg.data), 0)
-        save_image(img_sample, 'images/%s/%s_max.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
-    
+                            real_A_neg.data, fake_B_neg.data, 
+                            binarize_tensor(fake_B_pos+fake_B_neg) ), 0)
+    save_image(img_sample, 'images/%s/%s.png' % (opt.dataset_name, batches_done), 
+               nrow=5, normalize=True)        
+        
     if second_pass_gan:        
         fake_BB_pos = G_AB(fake_B_pos)            
         fake_BB_neg = G_AB(fake_B_neg)
         img_sample = torch.cat((real_A_pos.data, fake_BB_pos.data,
-                        real_A_neg.data, fake_BB_neg.data), 0)
-        save_image(img_sample, 'images/%s/%s_2nd_gan.png' % (opt.dataset_name, batches_done), nrow=5, normalize=True)
+                        real_A_neg.data, fake_BB_neg.data ), 0)
+#        img_sample = torch.cat((fake_BB_pos, fake_BB_neg,
+#                        (fake_BB_pos.data+fake_BB_neg.data)/2 ), 0)
+        save_image(img_sample, 'images/%s/%s_2nd_gan.png' % (opt.dataset_name, batches_done), 
+                   nrow=6, normalize=True)
         
 
 
@@ -124,7 +130,7 @@ def get_loaders(opt):
                             data_mode = opt.data_mode,
                             ),
                             batch_size=opt.batch_test_size, 
-                            shuffle=False, 
+                            shuffle=True, 
                             num_workers=1                            
                             )
     
