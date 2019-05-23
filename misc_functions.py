@@ -14,13 +14,14 @@ import numpy as np
 from numpy import random
 
 
+
+
 def binarize_tensor(img):
     thresh_val = img.mean()    
     img = (img>thresh_val).float()*1       
     img = 2*img-1
     
     return img
-
 
 # choosing the best output between the positive and negative
 def reason_images(fake_B_pos, fake_B_neg):
