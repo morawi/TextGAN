@@ -24,13 +24,13 @@ def binarize_tensor(img):
     return img
 
 # choosing the best output between the positive and negative
-def reason_images(fake_B_pos, fake_B_neg):
-    for i in range(len(fake_B_pos)):
-            s_pos = fake_B_pos.data[i].sum()
-            s_neg = fake_B_neg.data[i].sum()
+def reason_images(img_pos, img_neg):
+    for i in range(len(img_pos)):
+            s_pos = img_pos.data[i].sum()
+            s_neg = img_neg.data[i].sum()
             if s_pos>s_neg:
-                fake_B_neg.data[i] = fake_B_pos.data[i] 
-    return fake_B_neg
+                img_neg.data[i] = img_pos.data[i] 
+    return img_neg
 
 
 
@@ -65,8 +65,8 @@ def sample_images(imgs, batches_done, G_AB, Tensor, opt, use_max=False):
     
     img_sample = torch.cat((real_A_pos.data, fake_B_pos.data,
                             real_A_neg.data, fake_B_neg.data, 
-                            binarize_tensor(fake_B_pos+fake_B_neg) ), 0)
-    save_image(img_sample, 'images/%s/%s.png' % (opt.dataset_name, batches_done), 
+                            (fake_B_pos+fake_B_neg)/2 ), 0)
+    save_image(img_sample, 'images/%s/%s.png' % (opt.experiment_name, batches_done), 
                nrow=5, normalize=True)        
         
     if second_pass_gan:        
@@ -76,7 +76,7 @@ def sample_images(imgs, batches_done, G_AB, Tensor, opt, use_max=False):
                         real_A_neg.data, fake_BB_neg.data ), 0)
 #        img_sample = torch.cat((fake_BB_pos, fake_BB_neg,
 #                        (fake_BB_pos.data+fake_BB_neg.data)/2 ), 0)
-        save_image(img_sample, 'images/%s/%s_2nd_gan.png' % (opt.dataset_name, batches_done), 
+        save_image(img_sample, 'images/%s/%s_2nd_gan.png' % (opt.experiment_name, batches_done), 
                    nrow=6, normalize=True)
         
 
@@ -128,7 +128,7 @@ def get_loaders(opt):
                             transform = transforms_val,                           
                             aligned=True, # should always be aligned
                             mode='test', 
-                            data_mode = opt.data_mode,
+                            data_mode = '' # '' if opt.data_mode=='_prime' else opt.data_mode,
                             ),
                             batch_size=opt.batch_test_size, 
                             shuffle=True, 
