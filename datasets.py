@@ -63,14 +63,17 @@ class ImageDataset(Dataset):
         folder_name = '%s/B'+ data_mode
         self.files_A = sorted(glob.glob(os.path.join(root, '%s/A' % mode) + '/*.*'))
         self.files_B = sorted(glob.glob(os.path.join(root, folder_name % mode) + '/*.*'))
-                                                
-
+        sheer_tsfm = transforms.RandomAffine(degrees =(-20, 20), shear=(-30, 30) )         
+        self.random_sheer = transforms.Compose(
+                [transforms.RandomApply([sheer_tsfm], p = 0.3)]) # will only be used if cf.use_distortion_augmentor is True
+        
     def __getitem__(self, index):
         item_A = Image.open(self.files_A[index % len(self.files_A)])                                
-        if self.aligned:
-            item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image            
+        if self.aligned and not self.data_mode=='B_prime'  :
+            item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image                        
         else:            
-            item_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)])            
+            item_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)]) 
+            item_B = self.random_sheer(item_B)
         
         if self.mode == 'train' and self.data_mode != 'lime' :
             if np.random.rand() < self.p_RGB2BGR_augment: # will not run when p_RGB2BGR_augment=0
@@ -78,7 +81,8 @@ class ImageDataset(Dataset):
                 item_B = color_mapping_cv2(item_B)                                                                        
             if np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
                 item_A = PIL_invert(item_A)                  
-                item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
+                if not self.data_mode=='B_prime' :
+                    item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
         
         if self.data_mode =='gt': item_B_neg = item_B # no need to invert here
         else: item_B_neg = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
@@ -95,7 +99,12 @@ class ImageDataset(Dataset):
                 'B_neg': item_B_neg}
 
     def __len__(self):
-        return max(len(self.files_A), len(self.files_B))
+        # return min(len(self.files_A), len(self.files_B)) # original
+         return min(len(self.files_A), len(self.files_B))
+#        if self.mode == 'train' and self.data_mode =='B_prime':
+#            return min(len(self.files_A), len(self.files_B)) # since B_prime has lots of B samples, but A samples are the training samples, and we are randomly sampling from B_prime
+#        else:  max(len(self.files_A), len(self.files_B))
+
 
 
 

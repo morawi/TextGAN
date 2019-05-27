@@ -29,6 +29,7 @@ from F1_loss import F1_loss_prime
 from misc_functions import random_seeding, get_loaders, sample_images, test_performance
 import torchvision.models as torchvis_models
 from torchvision.utils import save_image
+import calendar
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=0, help='epoch to start training from')
@@ -50,10 +51,13 @@ parser.add_argument('--n_residual_blocks', type=int, default=9, help='number of 
 parser.add_argument('--test_interval', type=int, default=11, help='interval to calculate overall testing performance via L1')
 opt = parser.parse_args()
 
-generate_all_test_images = True
 
+dt = datetime.datetime.today()
+opt.dataset_name = 'text_segmentation' + str(opt.img_width) 
+opt.experiment_name = opt.dataset_name+'-'+ calendar.month_abbr[dt.month]+'-'+str(dt.day)
 # opt.lr=0.00001
 # opt.epoch = 0  # to load previous models, use more than 0
+generate_all_test_images = True
 opt.n_epochs = 320
 opt.batch_size = 1
 opt.batch_test_size = 1
@@ -61,18 +65,17 @@ opt.seed_value = 12345
 opt.decay_epoch= 100  if opt.n_epochs>100 else opt.n_epochs//2
 opt.img_width= 256
 opt.img_height= 256
-opt.dataset_name = 'text_segmentation'+str(opt.img_width)# 'synthtext'
 opt.show_progress_every_n_iterations= 20  
 opt.AMS_grad = True
 opt.sample_interval = 500
 opt.test_interval = 10
 opt.checkpoint_interval = 50
-opt.p_RGB2BGR_augment = 0.5 # .25 # 0 means not using this augmentation
-opt.p_invert_augment =  0.25 # 0 means not using this augmentation
-opt.aligned = True
+opt.p_RGB2BGR_augment = 0.33 # .25 # 0 means not using this augmentation
+opt.p_invert_augment =  0.33 # 0 means not using this augmentation
+opt.aligned = False
 opt.use_F1_loss = False
 opt.use_whollyG = False # use an optimizer on top of the GAN to learn the lambda's of the losses
-opt.data_mode = '' 
+opt.data_mode = '_prime' 
 ''' this is the background of GT one of four: 
 '': for black, 
 '_lime' for lime color, 
@@ -91,12 +94,12 @@ opt.data_mode = ''
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 Flag = opt.use_whollyG # sets grad to True if using whollyG
-lambda_cycle_A = torch.tensor(10, dtype=torch.float32, requires_grad= Flag).to(device)
-lambda_cycle_B = torch.tensor(10, dtype=torch.float32, requires_grad=Flag).to(device)
-lambda_id_A = torch.tensor(5, dtype=torch.float32, requires_grad=Flag).to(device)
-lambda_id_B = torch.tensor(7, dtype=torch.float32, requires_grad=Flag).to(device) # originally 5
-lambda_GAN_BA = torch.tensor(1, dtype=torch.float32, requires_grad=Flag).to(device) 
-lambda_GAN_AB = torch.tensor(2, dtype=torch.float32, requires_grad=Flag).to(device)  # originally 1
+opt.lambda_cycle_A = torch.tensor(10, dtype=torch.float32, requires_grad= Flag).to(device)
+opt.lambda_cycle_B = torch.tensor(10, dtype=torch.float32, requires_grad=Flag).to(device)
+opt.lambda_id_A = torch.tensor(5, dtype=torch.float32, requires_grad=Flag).to(device)
+opt.lambda_id_B = torch.tensor(5, dtype=torch.float32, requires_grad=Flag).to(device) # originally 5
+opt.lambda_GAN_BA = torch.tensor(1, dtype=torch.float32, requires_grad=Flag).to(device) 
+opt.lambda_GAN_AB = torch.tensor(1, dtype=torch.float32, requires_grad=Flag).to(device)  # originally 1
 
 
 
@@ -108,9 +111,10 @@ random_seeding(opt.seed_value,
                torch.cuda.get_rng_state(), cuda)        
 
 dataloader, val_dataloader = get_loaders(opt)
+
 # Create sample and checkpoint directories
-os.makedirs('images/%s' % opt.dataset_name, exist_ok=True)
-os.makedirs('saved_models/%s' % opt.dataset_name, exist_ok=True)
+os.makedirs('images/%s' % opt.experiment_name, exist_ok=True)
+os.makedirs('saved_models/%s' % opt.experiment_name, exist_ok=True)
 
 # Losses
 criterion_GAN = torch.nn.MSELoss()
@@ -143,10 +147,10 @@ if cuda:
         
 if opt.epoch != 0:
     # Load pretrained models
-    G_AB.load_state_dict(torch.load('saved_models/%s/G_AB_%d.pth' % (opt.dataset_name, opt.epoch)))
-    G_BA.load_state_dict(torch.load('saved_models/%s/G_BA_%d.pth' % (opt.dataset_name, opt.epoch)))
-    D_A.load_state_dict(torch.load('saved_models/%s/D_A_%d.pth' % (opt.dataset_name, opt.epoch)))
-    D_B.load_state_dict(torch.load('saved_models/%s/D_B_%d.pth' % (opt.dataset_name, opt.epoch)))
+    G_AB.load_state_dict(torch.load('saved_models/%s/G_AB_%d.pth' % (opt.experiment_name, opt.epoch)))
+    G_BA.load_state_dict(torch.load('saved_models/%s/G_BA_%d.pth' % (opt.experiment_name, opt.epoch)))
+    D_A.load_state_dict(torch.load('saved_models/%s/D_A_%d.pth' % (opt.experiment_name, opt.epoch)))
+    D_B.load_state_dict(torch.load('saved_models/%s/D_B_%d.pth' % (opt.experiment_name, opt.epoch)))
 else:
     # Initialize weights
     G_AB.apply(weights_init_normal)
@@ -188,12 +192,12 @@ if opt.use_whollyG:
             , lr=lr_whollyG, betas=(opt.b1, opt.b2), amsgrad=opt.AMS_grad)
     # loss_whollyG = torch.nn.MSELoss()
     with torch.no_grad():
-        model_whollyG[0].weight[0, 0] = lambda_cycle_B
-        model_whollyG[0].weight[0, 1] = lambda_GAN_AB
-        model_whollyG[0].weight[0, 2] = lambda_id_B
-        model_whollyG[0].weight[0, 3] = lambda_cycle_A        
-        model_whollyG[0].weight[0, 4] = lambda_id_A
-        model_whollyG[0].weight[0, 5] = lambda_GAN_BA
+        model_whollyG[0].weight[0, 0] = opt.lambda_cycle_B
+        model_whollyG[0].weight[0, 1] = opt.lambda_GAN_AB
+        model_whollyG[0].weight[0, 2] = opt.lambda_id_B
+        model_whollyG[0].weight[0, 3] = opt.lambda_cycle_A        
+        model_whollyG[0].weight[0, 4] = opt.lambda_id_A
+        model_whollyG[0].weight[0, 5] = opt.lambda_GAN_BA
     
  
 
@@ -214,7 +218,8 @@ def train_batch(i, epoch, batch, prev_time, real_A, real_B):
        Train Generators
      ------------------ '''
 
-    optimizer_G.zero_grad()
+    if not opt.use_whollyG: optimizer_G.zero_grad()
+    else: optimizer_whollyG.zero_grad() 
 
     # Identity loss
     loss_id_A = criterion_identity_A(G_BA(real_A), real_A)
@@ -236,28 +241,31 @@ def train_batch(i, epoch, batch, prev_time, real_A, real_B):
     if not opt.use_whollyG:
     # Total loss
         loss_G = ( 
-                lambda_GAN_AB*loss_GAN_AB + 
-                lambda_GAN_BA * loss_GAN_BA +                
-                lambda_cycle_A * loss_cycle_A + 
-                lambda_cycle_B * loss_cycle_B +
-                lambda_id_A * loss_id_A +
-                lambda_id_B * loss_id_B 
-                ) / 2
-
-        loss_G.backward()
-        optimizer_G.step()        
+                opt.lambda_GAN_AB*loss_GAN_AB + 
+                opt.lambda_GAN_BA * loss_GAN_BA +                
+                opt.lambda_cycle_A * loss_cycle_A + 
+                opt.lambda_cycle_B * loss_cycle_B +
+                opt.lambda_id_A * loss_id_A +
+                opt.lambda_id_B * loss_id_B 
+                ) / 2                
     else:            
-        optimizer_whollyG.zero_grad()
-        loss_in = torch.stack(
-                (loss_GAN_AB, loss_id_B,
-                 loss_GAN_BA, loss_id_A,
-                 loss_cycle_A, loss_cycle_B)
+        
+        loss_in = torch.stack( # should follow the same manual weight initializgtion above                
+                (loss_cycle_B,
+                 loss_GAN_AB, 
+                 loss_id_B,
+                 loss_cycle_A,
+                 loss_id_A,
+                 loss_GAN_BA)
                 )
-        loss_G = model_whollyG(loss_in)                         
-        loss_G.backward()
+        loss_whollyG = model_whollyG(loss_in)                         
+        
+    loss_G.backward()
+    optimizer_G.step()
+    if opt.use_whollyG: #whollyG is trained separately
+        loss_whollyG.backward()
         optimizer_whollyG.step()
         
-
         
         
 
@@ -368,10 +376,10 @@ for epoch in range(opt.epoch, opt.n_epochs):
 
     if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
         # Save model checkpoints
-        torch.save(G_AB.state_dict(), 'saved_models/%s/G_AB_%d.pth' % (opt.dataset_name, epoch))
-        torch.save(G_BA.state_dict(), 'saved_models/%s/G_BA_%d.pth' % (opt.dataset_name, epoch))
-        torch.save(D_A.state_dict(), 'saved_models/%s/D_A_%d.pth' % (opt.dataset_name, epoch))
-        torch.save(D_B.state_dict(), 'saved_models/%s/D_B_%d.pth' % (opt.dataset_name, epoch))
+        torch.save(G_AB.state_dict(), 'saved_models/%s/G_AB_%d.pth' % (opt.experiment_name, epoch))
+        torch.save(G_BA.state_dict(), 'saved_models/%s/G_BA_%d.pth' % (opt.experiment_name, epoch))
+        torch.save(D_A.state_dict(), 'saved_models/%s/D_A_%d.pth' % (opt.experiment_name, epoch))
+        torch.save(D_B.state_dict(), 'saved_models/%s/D_B_%d.pth' % (opt.experiment_name, epoch))
     if not epoch % opt.test_interval:
         test_performance(Tensor, val_dataloader, G_AB, 
                                   criterion_identity_testing)
