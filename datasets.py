@@ -73,18 +73,18 @@ class ImageDataset(Dataset):
             item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image                        
         else:            
             item_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)]) 
-            item_B = self.random_sheer(item_B)
+            if self.data_mode=='B_prime': item_B = self.random_sheer(item_B)
         
-        if self.mode == 'train' and self.data_mode != 'lime' :
+        if self.mode == 'train' and self.data_mode != 'lime' : # we don't want lime to be corrupted
             if np.random.rand() < self.p_RGB2BGR_augment: # will not run when p_RGB2BGR_augment=0
                 item_A = color_mapping_cv2(item_A)                
                 item_B = color_mapping_cv2(item_B)                                                                        
             if np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
                 item_A = PIL_invert(item_A)                  
-                if not self.data_mode=='B_prime' :
+                if not self.data_mode=='B_prime' : # we do not want to invert B_prime
                     item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
         
-        if self.data_mode =='gt': item_B_neg = item_B # no need to invert here
+        if self.data_mode =='gt': item_B_neg = item_B # no need to invert gt(white text) here
         else: item_B_neg = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
         
         # transformation
