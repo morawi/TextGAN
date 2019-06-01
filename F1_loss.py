@@ -12,9 +12,9 @@ https://blog.exsilio.com/all/accuracy-precision-recall-f1-score-interpretation-o
 """
 import torch
 from PIL import Image
-
 import torchvision.transforms as transforms
 import torchvision.models as models
+import numpy as np
 
 '''Calculates the F1 loss based on two inputs, pred and target
 Input args- 
@@ -59,11 +59,13 @@ for F1_loss_prime, the value of alpha affects the thresholding.
 
 '''
 
+# numpy_img = numpy.asarray(PIL_img)
+
 
 def arithmetic_or(x,y):
     return x + y - x*y
 
-
+# pred and target are tensors here
 def F1_loss(pred, target, reduce= True, thresh_val = 0):   
     epsilon = 1e-10 # epsilon used to prevent overflow
     pred = torch.gt(pred, thresh_val).byte()
@@ -93,6 +95,7 @@ def F1_loss(pred, target, reduce= True, thresh_val = 0):
     return F1 #, accuracy 
 
 
+# pred and target are tensors here
 '''Same as F1_loss above but it is performed using boolean algebra'''
 def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):   
     
@@ -118,6 +121,24 @@ def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):
         F1 = F1.mean(dim=0) # else, return a measure for each channel
     
     return F1
+
+def F1_loss_numpy(pred, target): 
+    pred = pred[:,:,0]  # using only the red channel
+    target = target[:,:,0]
+
+    N = np.logical_or(pred, target)  # logical 
+    Tp = np.logical_and(pred, target) 
+    Fn = np.bitwise_xor(target, Tp) # element-wise subtraction in pytorch 
+    Fp = np.bitwise_xor(pred, Tp)        
+    xx= np.logical_or(np.logical_or(Tp,Fp), Fn)
+    Tn = np.bitwise_xor(N, xx)
+
+    precision = Tp.sum()/(Tp.sum()+ Fp.sum() )
+    recall = Tp.sum()/(Tp.sum()+ Fn.sum()) 
+    F1 = 2*Tp.sum() /(2*Tp.sum()+ Fn.sum()+ Fp.sum())
+    accuracy = (Tp.sum()+Tn.sum())/N.sum()
+ 
+    return F1, accuracy, precision, recall
 
 
 
