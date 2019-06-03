@@ -44,15 +44,15 @@ def test_GAN_AB(folder_model, model_name, val_dataloader,
             else: print('Single GAN') if i==0 else None
             if type_of_input_A == 'pos': 
                 B_GAN =  show_tensor(B_gan )
-                print('+ve A as input') if i==0 else None
+                print(' +ve A as input') if i==0 else None
             elif type_of_input_A == 'neg':
                 B_GAN = show_tensor( B_gan_neg )
-                print('-ve A as input') if i==0 else None
+                print(' -ve A as input') if i==0 else None
             elif type_of_input_A == 'pos+neg' :                   
                 B_GAN = ImageChops.add_modulo(show_tensor(B_gan), show_tensor(B_gan_neg) )   
                 print('+ve added to -ve') if i==0 else None
             elif  type_of_input_A == 'GAN(-nGAN+pGAN)': # this will override all the other options
-                B_GAN = show_tensor( G_AB( G_AB(real_A)+G_AB(real_A_neg) ) )
+                B_GAN = show_tensor( G_AB( G_AB(real_A)+ G_AB(real_A_neg) ) )
                 print('GAN(-nGAN+pGAN)') if i==0 else None
                 
             
@@ -62,7 +62,13 @@ def test_GAN_AB(folder_model, model_name, val_dataloader,
             P.append(p)
             R.append(r)
             
-        print('F1=%f.2', np.mean(F1), '\nP=', np.mean(P), '\nR=', np.mean(R) )
+#        print('F1=%.2f' % (100*np.mean(F1)), '\nP=%.2f' % (100*np.mean(P)), 
+#              '\nR=%.2f' % (100*np.mean(R)) )
+#            
+        print('R %.2f ' % (100*np.mean(R)), 
+              'P %.2f ' % (100*np.mean(P)), 
+              'F %.2f ' % (100*np.mean(F1))    
+              )
             
     return np.mean(F1), np.mean(P), np.mean(R)
         
@@ -84,18 +90,23 @@ val_dataloader = DataLoader(ImageDataset("../data/%s" % dataset_name,
                             batch_size= batch_test_size, shuffle=False, num_workers=1                            
                             )
 
+# folder_model = './saved_models/text_segmentation512-May-30/'
+# folder_model = './saved_models/aligned-text_segmentation256-may25/'
+# folder_model = './saved_models/unaligned-text_segmentation256-may26/'
+folder_model ='./saved_models/text_segmentation256-Jun-2/'
 
-folder_model = './saved_models/unaligned-text_segmentation256-may26/'
+
 model_name = 'G_AB_300.pth'
 
-test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='GAN(-nGAN+pGAN)')
+
+
 test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='pos')
 test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='neg')
 test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='pos+neg')
 test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='pos')
 test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='neg')
 test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='pos+neg')
-
+test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='GAN(-nGAN+pGAN)')
 
 
 
