@@ -12,7 +12,6 @@ Optimization
 https://github.com/gkhayes/mlrose
 https://towardsdatascience.com/getting-started-with-randomized-optimization-in-python-f7df46babff0
 
-
 """
 
 import argparse
@@ -51,7 +50,8 @@ parser.add_argument('--n_residual_blocks', type=int, default=9, help='number of 
 parser.add_argument('--test_interval', type=int, default=11, help='interval to calculate overall testing performance via L1')
 opt = parser.parse_args()
 
-
+opt.img_height = 256
+opt.img_width = 256
 dt = datetime.datetime.today()
 opt.dataset_name = 'text_segmentation' + str(opt.img_width) 
 opt.experiment_name = opt.dataset_name+'-'+ calendar.month_abbr[dt.month]+'-'+str(dt.day)
@@ -61,21 +61,21 @@ generate_all_test_images = True
 opt.n_epochs = 320
 opt.batch_size = 1
 opt.batch_test_size = 1
-opt.seed_value = 12345
+opt.seed_value =  12345 # np.random.randint(1, 2**32-1) 
 opt.decay_epoch= 100  if opt.n_epochs>100 else opt.n_epochs//2
-opt.img_width= 256
-opt.img_height= 256
 opt.show_progress_every_n_iterations= 20  
 opt.AMS_grad = True
-opt.sample_interval = 500
+opt.sample_interval = 100
 opt.test_interval = 10
 opt.checkpoint_interval = 50
-opt.p_RGB2BGR_augment = 0.33 # .25 # 0 means not using this augmentation
+opt.p_RGB2BGR_augment = 0 # .25 # 0 means not using this augmentation
 opt.p_invert_augment =  0.33 # 0 means not using this augmentation
 opt.aligned = False
 opt.use_F1_loss = False
-opt.use_whollyG = False # use an optimizer on top of the GAN to learn the lambda's of the losses
-opt.data_mode = '_prime' 
+
+opt.use_whollyG = True # use an optimizer on top of the GAN to learn the lambda's of the losses
+
+opt.data_mode = ''  # will also do affine transform wiht prob 0.3 
 ''' this is the background of GT one of four: 
 '': for black, 
 '_lime' for lime color, 
@@ -111,6 +111,7 @@ random_seeding(opt.seed_value,
                torch.cuda.get_rng_state(), cuda)        
 
 dataloader, val_dataloader = get_loaders(opt)
+dataloader.dataset[1]
 
 # Create sample and checkpoint directories
 os.makedirs('images/%s' % opt.experiment_name, exist_ok=True)
@@ -184,13 +185,9 @@ model_whollyG.weight
 to obtain the Lambdas    
 '''
 if opt.use_whollyG:
-    lr_whollyG = 0.01
+    lr_whollyG = 0.0002
     No_Lambdas = 6
     model_whollyG = torch.nn.Sequential(torch.nn.Linear(No_Lambdas, 1, bias=False)).to(device)
-    optimizer_whollyG = torch.optim.Adam( model_whollyG.parameters() 
-            #itertools.chain( G_AB.parameters(), G_BA.parameters(), model_whollyG.parameters() )
-            , lr=lr_whollyG, betas=(opt.b1, opt.b2), amsgrad=opt.AMS_grad)
-    # loss_whollyG = torch.nn.MSELoss()
     with torch.no_grad():
         model_whollyG[0].weight[0, 0] = opt.lambda_cycle_B
         model_whollyG[0].weight[0, 1] = opt.lambda_GAN_AB
@@ -198,8 +195,16 @@ if opt.use_whollyG:
         model_whollyG[0].weight[0, 3] = opt.lambda_cycle_A        
         model_whollyG[0].weight[0, 4] = opt.lambda_id_A
         model_whollyG[0].weight[0, 5] = opt.lambda_GAN_BA
-    
  
+    optimizer_whollyG = torch.optim.Adam( 
+            # model_whollyG.parameters() 
+            itertools.chain( G_AB.parameters(), G_BA.parameters(), model_whollyG.parameters() )
+                            ,lr=lr_whollyG, betas=(opt.b1, opt.b2), amsgrad=opt.AMS_grad
+    )
+    lr_scheduler_whollyG = torch.optim.lr_scheduler.LambdaLR(optimizer_whollyG, 
+                lr_lambda=LambdaLR(opt.n_epochs, opt.epoch, opt.decay_epoch).step)
+    # loss_whollyG = torch.nn.MSELoss()
+    
 
 Tensor = torch.cuda.FloatTensor if cuda else torch.Tensor
 # Buffers of previously generated samples
@@ -218,12 +223,14 @@ def train_batch(i, epoch, batch, prev_time, real_A, real_B):
        Train Generators
      ------------------ '''
 
-    if not opt.use_whollyG: optimizer_G.zero_grad()
-    else: optimizer_whollyG.zero_grad() 
+    if opt.use_whollyG: optimizer_whollyG.zero_grad() 
+    else:  optimizer_G.zero_grad()    
 
     # Identity loss
-    loss_id_A = criterion_identity_A(G_BA(real_A), real_A)
+    
+    loss_id_A = criterion_identity_A(G_BA(real_A), real_A)    
     loss_id_B = criterion_identity_B(G_AB(real_B), real_B)
+        
     
     # GAN loss
     fake_B = G_AB(real_A)
@@ -247,10 +254,12 @@ def train_batch(i, epoch, batch, prev_time, real_A, real_B):
                 opt.lambda_cycle_B * loss_cycle_B +
                 opt.lambda_id_A * loss_id_A +
                 opt.lambda_id_B * loss_id_B 
-                ) / 2                
+                ) / 2   
+        loss_G.backward()
+        optimizer_G.step()      
     else:            
         
-        loss_in = torch.stack( # should follow the same manual weight initializgtion above                
+        losses_in = torch.stack( # should follow the same manual weight initializgtion above                
                 (loss_cycle_B,
                  loss_GAN_AB, 
                  loss_id_B,
@@ -258,15 +267,11 @@ def train_batch(i, epoch, batch, prev_time, real_A, real_B):
                  loss_id_A,
                  loss_GAN_BA)
                 )
-        loss_whollyG = model_whollyG(loss_in)                         
-        
-    loss_G.backward()
-    optimizer_G.step()
-    if opt.use_whollyG: #whollyG is trained separately
+        loss_whollyG = model_whollyG(losses_in)
         loss_whollyG.backward()
         optimizer_whollyG.step()
-        
-        
+        loss_G =  loss_whollyG # to be used in priting the results                                           
+
         
 
     ''' -----------------------
@@ -326,7 +331,9 @@ def train_batch(i, epoch, batch, prev_time, real_A, real_B):
             ' cycle_B: %f,'
             ' identity_A: %f,'
             ' identity_B: %f],'
-            ' ETA(time-left): %s' % (
+            ' Lambda00: %f,'
+            ' ETA(time-left): %s'           
+                 % (
             epoch, opt.n_epochs, i, len(dataloader),
             (loss_D_A + loss_D_B).item()/2, 
             loss_G.item(),
@@ -336,8 +343,9 @@ def train_batch(i, epoch, batch, prev_time, real_A, real_B):
             loss_cycle_B.item(),
             loss_id_A.item(), 
             loss_id_B.item(), 
-            time_left) 
-            )
+            model_whollyG[0].weight[0,0].cpu().item(),
+            time_left            
+            ) )
                     
     
         
@@ -370,6 +378,8 @@ for epoch in range(opt.epoch, opt.n_epochs):
     loss_of_id_B.append(loss_id_B)             
     
     # Update learning rates
+    if opt.use_whollyG: lr_scheduler_whollyG.step(); 
+        
     lr_scheduler_G.step()
     lr_scheduler_D_A.step()
     lr_scheduler_D_B.step()
@@ -392,7 +402,7 @@ print('\n ................. Training the +ve vs. -ve  B classifier .............
 # test_performance = test_model_classify(criterion_classify, val_dataloader) 
 # print(test_performance)
 test_performance(Tensor, val_dataloader, G_AB, criterion_identity_testing)
-
+print('Lambdas=', model_whollyG[0].weight.data.cpu().tolist()[0])
 #if generate_all_test_images:
 for batch_idx, imgs in enumerate(val_dataloader):
     sample_images(imgs, batch_idx, G_AB, Tensor, opt, use_max=False) # another instance
