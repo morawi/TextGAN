@@ -7,7 +7,7 @@ from PIL import Image
 from PIL.ImageOps import invert as PIL_invert
 import torchvision.transforms as transforms
 import numpy as np
-import cv2
+# import cv2
 
 def color_mapping(img, Cr, Cg, Cb, ignor_zeros=True):
     #  option is to use pallet, imageWithColorPalette = colorImage.convert("P", palette=Image.ADAPTIVE, colors=8)
@@ -36,7 +36,7 @@ https://www.programcreek.com/python/example/71304/cv2.COLOR_BGR2RGB
 '''
 def color_mapping_cv2(img):
     img = np.asarray(img)
-    img = cv2.cvtColor(img,cv2.COLOR_RGB2BGR)
+#    img = cv2.cvtColor(img,cv2.COLOR_RGB2BGR)
     img = Image.fromarray(img)
     
     return img
@@ -61,27 +61,39 @@ class ImageDataset(Dataset):
         self.p_invert_augment = p_invert_augment        
         self.data_mode = data_mode
         folder_name = '%s/B'+ data_mode
-        self.files_A = sorted(glob.glob(os.path.join(root, '%s/A' % mode) + '/*.*'))
+        self.files_A = sorted(glob.glob(os.path.join(root, '%s/A' % mode) + '/*.*'))        
         self.files_B = sorted(glob.glob(os.path.join(root, folder_name % mode) + '/*.*'))
-        sheer_tsfm = transforms.RandomAffine(degrees =(-20, 20), shear=(-30, 30) )         
+        if (not self.files_A) and (not self.files_B):
+            print('Error in loading data files: Check you have used the correct path and folder name')
+        sheer_tsfm = transforms.RandomAffine(degrees =(-20, 20), shear=(-30, 30) )  
+        # perspective_tsf = transforms.RandomPerspective(distortion_scale=0.5, p=0.5, interpolation=3)
         self.random_sheer = transforms.Compose(
-                [transforms.RandomApply([sheer_tsfm], p = 0.3)]) # will only be used if cf.use_distortion_augmentor is True
+                [transforms.RandomApply([sheer_tsfm], p = 0.3)], 
+                # [perspective_tsf]
+                ) # will only be used if cf.use_distortion_augmentor is True
         
-    def __getitem__(self, index):
+    def __getitem__(self, index):                      
+        
         item_A = Image.open(self.files_A[index % len(self.files_A)])                                
-        if self.aligned and not self.data_mode=='B_prime'  :
-            item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image                        
+        if self.aligned and not self.data_mode=='_prime'  :
+            item_B = Image.open(self.files_B[index % len(self.files_B)]) # False gives the corresponding B to A image                                    
         else:            
             item_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)]) 
-            if self.data_mode=='B_prime': item_B = self.random_sheer(item_B)
-        
-        if self.mode == 'train' and self.data_mode != 'lime' : # we don't want lime to be corrupted
+            if self.data_mode=='_prime': 
+                item_B = self.random_sheer(item_B)                 
+                        
+#        resize = True # used only for total_text
+#        if resize:
+#            item_A = item_A.resize([256, 256], Image.LANCZOS)
+#            item_B = item_B.resize([256, 256], Image.LANCZOS)
+            
+        if self.mode == 'train': # we don't want lime to be corrupted
             if np.random.rand() < self.p_RGB2BGR_augment: # will not run when p_RGB2BGR_augment=0
                 item_A = color_mapping_cv2(item_A)                
                 item_B = color_mapping_cv2(item_B)                                                                        
             if np.random.rand() < self.p_invert_augment: # will not run when p_invert_augment=0
                 item_A = PIL_invert(item_A)                  
-                if not self.data_mode=='B_prime' : # we do not want to invert B_prime
+                if not self.data_mode=='_prime' : # we do not want to invert B_prime
                     item_B = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
         
         if self.data_mode =='gt': item_B_neg = item_B # no need to invert gt(white text) here
@@ -100,7 +112,7 @@ class ImageDataset(Dataset):
 
     def __len__(self):
         # return min(len(self.files_A), len(self.files_B)) # original
-         return min(len(self.files_A), len(self.files_B))
+         return len(self.files_A) # we have to use the training set length
 #        if self.mode == 'train' and self.data_mode =='B_prime':
 #            return min(len(self.files_A), len(self.files_B)) # since B_prime has lots of B samples, but A samples are the training samples, and we are randomly sampling from B_prime
 #        else:  max(len(self.files_A), len(self.files_B))
