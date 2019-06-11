@@ -16,6 +16,8 @@ import torchvision.transforms as transforms
 import torchvision.models as models
 import numpy as np
 
+
+
 '''Calculates the F1 loss based on two inputs, pred and target
 Input args- 
     - pred: batch of images as tensor
@@ -65,6 +67,16 @@ for F1_loss_prime, the value of alpha affects the thresholding.
 def arithmetic_or(x,y):
     return x + y - x*y
 
+def normalize_tensor_0_1(x):
+    min_x = torch.min(x)
+    range_x = torch.max(x) - min_x
+    if range_x > 0:
+        normalised = (x - min_x) / range_x
+    else:
+        normalised = 0*x
+    return normalised
+
+
 # pred and target are tensors here
 def F1_loss(pred, target, reduce= True, thresh_val = 0):   
     epsilon = 1e-10 # epsilon used to prevent overflow
@@ -94,31 +106,46 @@ def F1_loss(pred, target, reduce= True, thresh_val = 0):
     F1.requires_grad_(True)
     return F1 #, accuracy 
 
-
+# show_tensor(torch.sigmoid(alpha*pred + pred.mean()), show_img = True)
+#    show_tensor(torch.sigmoid(alpha*target + target.mean()) , show_img = True)
+#     pred = pred / pred.sum(0).expand_as(pred)
+    # show_tensor(x, show_img = True)
+# torch.sigmoid(alpha*pred).requires_grad_(True)
 # pred and target are tensors here
-'''Same as F1_loss above but it is performed using boolean algebra'''
-def F1_loss_prime(pred, target, reduce= True, alpha = 1100, beta = 220):   
+
+def tensor_to_grayscale(img):
+    return ( img[:,0,:,:] + img[:,1,:,:] + img[:,2,:,:] )/3    
     
-    epsilon = 1e-10 # epsilon used to prevent overflow
-    pred   = torch.sigmoid(alpha*pred-beta).requires_grad_(True) 
-    target = torch.sigmoid(alpha*target-beta).requires_grad_(True)     
+ #    x= torch.sigmoid(alpha*(pred - beta)); show_tensor(x, show_img= True)
+'''Same as F1_loss above but it is performed using boolean algebra'''
+def F1_loss_torch(pred, target, alpha = 1E6):   # alpha 1E6 ensures hard thresholding
+    
+    epsilon = 1e-10 # epsilon used to prevent overflow    
+    pred = tensor_to_grayscale(pred) # using, pred[:,0,:,:], only the first channel gave slightly higher result 
+    target = tensor_to_grayscale(target)
+    
+    pred   = torch.sigmoid(1E6*(pred - pred.mean() )).requires_grad_(True)    
+    target = torch.sigmoid(1E6*(target - target.mean() )).requires_grad_(False)     
+    
+    pred = normalize_tensor_0_1(pred)
+    target = normalize_tensor_0_1(target)
+    # show_tensor(Fp, 'Fp')    
+    
     N = arithmetic_or(pred, target)  # logical
     Tp = pred * target
-    Fn = target - Tp 
-    Fp = pred - Tp     
-    Tn = N - arithmetic_or(arithmetic_or(Tp, Fp), Fn) 
-    Tn = torch.sum(Tn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
-    Tp = torch.sum(Tp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze() # summing over x,y, keeping the batch and the channel dim
-    Fp = torch.sum(Fp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
-    Fn = torch.sum(Fn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()    
-        
-    F1 = 1 - 2*(Tp + epsilon)/(2*Tp+Fp+Fn - epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
-    # the minus sign in the dominator will ensure that F1 is 3 when there is a zero division
+    Fn = torch.abs(target - Tp)
+    Fp = torch.abs(pred - Tp)
+    Tn = torch.abs(N - arithmetic_or(arithmetic_or(Tp, Fp), Fn) )
+    T_n = torch.sum(Tn, dtype=torch.float32)
+    T_p = torch.sum(Tp, dtype=torch.float32)
+    F_p = torch.sum(Fp, dtype=torch.float32)
+    F_n = torch.sum(Fn, dtype=torch.float32)
     
-    if reduce == True:        
-        F1 = F1.mean()
-    else:
-        F1 = F1.mean(dim=0) # else, return a measure for each channel
+    ''' to be used in optimization'''    
+    
+    # the minus sign (before epsilob) in the dominator will ensure that F1 is 3 when there is a zero division               
+    F1 = 2*T_p /( 2*T_p + F_n + F_p ) 
+    # F1 = 1 - 2*(T_p + epsilon)/(2*T_p + F_p + F_n - epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
     
     return F1
 
@@ -135,13 +162,18 @@ def F1_loss_numpy(pred, target):
 
     precision = Tp.sum()/(Tp.sum()+ Fp.sum() )
     recall = Tp.sum()/(Tp.sum()+ Fn.sum()) 
-    F1 = 2*Tp.sum() /(2*Tp.sum()+ Fn.sum()+ Fp.sum())
+    F1 = 2*Tp.sum() /( 2*Tp.sum()+ Fn.sum()+ Fp.sum() )
     accuracy = (Tp.sum()+Tn.sum())/N.sum()
  
     return F1, accuracy, precision, recall
 
 
-
+def show_tensor(img, fname):
+    to_pil = transforms.ToPILImage() 
+    img1  = to_pil(img.cpu()) # we can also use test_set[1121][0].numpy()        
+    img1.show()        
+    img1.save('/home/malrawi/Desktop/GAN_seg_img_414/'+ fname +'.png')        
+       
 
 #model = torch.nn.Linear(10, 1)
 #x = torch.randn(1, 2)
@@ -149,7 +181,7 @@ def F1_loss_numpy(pred, target):
 ##x = torch.rand([5, 3, 10, 10])- .2
 #target = torch.randn(1, 2)
 #output = model(x)
-#loss = my_loss(output, target)
+#loss = F1_loss_prime(output, target)
 #loss.backward()
 #print(model.weight.grad)
 
