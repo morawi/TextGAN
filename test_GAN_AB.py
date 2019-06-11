@@ -11,10 +11,52 @@ from datasets import ImageDataset
 from torch.utils.data import DataLoader
 import torch
 from models import GeneratorResNet
-from F1_loss import F1_loss_numpy
+from F1_loss import F1_loss_numpy, F1_loss_torch
 import numpy as np
-from PIL import ImageChops 
+
 # from matplotlib import pyplot as plt
+
+
+
+# A is the scene-text image
+# B is the ground truth of A
+
+def test_GAN_AB_torch(folder_model, model_name, val_dataloader, 
+                double_gan=True, type_of_input_A='pos+neg'):  
+    # type_of_input_A is one of these values  {'pos', 'neg', 'pos+neg', 'GAN(-nGAN+pGAN)' }
+    n_residual_blocks = 9 # this should be the same values used in training the G_AB model
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    G_AB = GeneratorResNet(res_blocks=n_residual_blocks)
+    cuda = True if torch.cuda.is_available() else False
+    if cuda: G_AB = G_AB.cuda()
+    G_AB.load_state_dict(torch.load(folder_model + model_name ) )
+    F1 = []; R=[]; P=[]; print('\n -----------------')
+        
+    with torch.no_grad():
+        for i, imgs_batch in enumerate(val_dataloader):   
+            if val_dataloader.dataset.files_A[i] == \
+            '../data/text_segmentation256/train/A/img_'+str(414)+'.png':
+                print('hi')
+            real_B = imgs_batch['B'].to(device)                                    
+            B_gan = G_AB( imgs_batch['A'].to(device) )             
+            B_gan_neg = G_AB(imgs_batch['A_neg'].to(device) )
+            
+            f1  = F1_loss_torch( B_gan + B_gan_neg, real_B, alpha = 10000 ) # needed to threshold the GT as well                                                                
+            F1.append(f1.cpu().data.detach().numpy().tolist())
+#            P.append(p)
+#            R.append(r)
+#            
+        print(
+                # 'R %.2f ' % (100*np.mean(R)), 
+            #  'P %.2f ' % (100*np.mean(P)), 
+              'F %.2f ' % (100*np.mean(F1))    
+              )
+            
+    return np.mean(F1) # , np.mean(P), np.mean(R)
+
+
+
+
 
 # A is the scene-text image
 # B is the ground truth of A
@@ -29,8 +71,15 @@ def test_GAN_AB(folder_model, model_name, val_dataloader,
     if cuda: G_AB = G_AB.cuda()
     G_AB.load_state_dict(torch.load(folder_model + model_name ) )
     F1 = []; R=[]; P=[]; print('\n -----------------')
+    show_img = False
+    img_to_show_idx = str(414-1212122)
     with torch.no_grad():
         for i, imgs_batch in enumerate(val_dataloader): 
+            if val_dataloader.dataset.files_A[i] == \
+            '../data/text_segmentation256/train/A/img_'+img_to_show_idx+'.png':
+                show_img = True
+            else: show_img = False            
+            
             real_B = imgs_batch['B'].to(device)            
             B_gt = show_tensor(real_B) # ground truth            
             real_A = imgs_batch['A'].to(device) 
@@ -43,16 +92,19 @@ def test_GAN_AB(folder_model, model_name, val_dataloader,
                 print('Using double GAN')  if i==0 else None
             else: print('Single GAN') if i==0 else None
             if type_of_input_A == 'pos': 
-                B_GAN =  show_tensor(B_gan )
+                B_GAN =  show_tensor(B_gan, show_img )
                 print(' +ve A as input') if i==0 else None
             elif type_of_input_A == 'neg':
-                B_GAN = show_tensor( B_gan_neg )
+                B_GAN = show_tensor( B_gan_neg, show_img )
                 print(' -ve A as input') if i==0 else None
             elif type_of_input_A == 'pos+neg' :                   
-                B_GAN = ImageChops.add_modulo(show_tensor(B_gan), show_tensor(B_gan_neg) )   
+                # B_GAN = ImageChops.add_modulo(show_tensor(B_gan), show_tensor(B_gan_neg) )   
+                B_GAN = show_tensor( B_gan+B_gan_neg, show_img )   
+                
                 print('+ve added to -ve') if i==0 else None
             elif  type_of_input_A == 'GAN(-nGAN+pGAN)': # this will override all the other options
-                B_GAN = show_tensor( G_AB( G_AB(real_A)+ G_AB(real_A_neg) ) )
+                B_GAN = show_tensor( G_AB( G_AB(real_A)+ G_AB(real_A_neg) ),
+                                    show_img)
                 print('GAN(-nGAN+pGAN)') if i==0 else None
                 
             
@@ -62,9 +114,7 @@ def test_GAN_AB(folder_model, model_name, val_dataloader,
             P.append(p)
             R.append(r)
             
-#        print('F1=%.2f' % (100*np.mean(F1)), '\nP=%.2f' % (100*np.mean(P)), 
-#              '\nR=%.2f' % (100*np.mean(R)) )
-#            
+          
         print('R %.2f ' % (100*np.mean(R)), 
               'P %.2f ' % (100*np.mean(P)), 
               'F %.2f ' % (100*np.mean(F1))    
@@ -72,42 +122,100 @@ def test_GAN_AB(folder_model, model_name, val_dataloader,
             
     return np.mean(F1), np.mean(P), np.mean(R)
         
-def show_tensor(img, show=False):
+def show_tensor(img, show_img=False):
     to_pil = transforms.ToPILImage() 
     img1  = to_pil(img.cpu().squeeze()) # we can also use test_set[1121][0].numpy()    
-    if show: img1.show()
+    if show_img: 
+        img1.show()        
+        img1.save('/home/malrawi/Desktop/GAN_seg_img_414/'+'gg-col'+'.png')
+        img2 = img1.point(lambda p: p > 10 and 255)
+        img2=img2.convert("1")
+        img2.save('/home/malrawi/Desktop/GAN_seg_img_414/'+'gg-bin'+'.png')
+        img2.show()
+    
     return img1
 
 
-dataset_name = 'text_segmentation256' 
+# dataset_name = 'text_segmentation256' 
+# dataset_name = 'total_text'     
+dataset_name = 'text_kaist_korean'
+
+using_test_data = True
+
 batch_test_size = 1 
 transforms_val =[ transforms.ToTensor(), 
                   transforms.Normalize((0.5,0.5,0.5), (.25,.25,.25)) 
                  ]
-val_dataloader = DataLoader(ImageDataset("../data/%s" % dataset_name, 
-                            transform = transforms_val, aligned=True, 
-                            mode='test', data_mode = '' ),
-                            batch_size= batch_test_size, shuffle=False, num_workers=1                            
-                            )
+if using_test_data:
+    val_dataloader = DataLoader(ImageDataset("../data/%s" % dataset_name, 
+                                transform = transforms_val, aligned=True, 
+                                mode='test', data_mode = '' ),
+                                batch_size= batch_test_size, shuffle=False, num_workers=1                            
+                                )
+
+else:
+    val_dataloader = DataLoader(ImageDataset("../data/%s" % dataset_name, 
+                                transform = transforms_val, aligned=True, 
+                                mode='train', data_mode = '' ),
+                                batch_size= batch_test_size, shuffle=False, num_workers=1                            
+                                )
 
 # folder_model = './saved_models/text_segmentation512-May-30/'
-# folder_model = './saved_models/aligned-text_segmentation256-may25/'
+#folder_model = './saved_models/aligned-text_segmentation256-may25/'
 # folder_model = './saved_models/unaligned-text_segmentation256-may26/'
 folder_model ='./saved_models/text_segmentation256-Jun-2/'
-
+# folder_model = './saved_models/total_text-Jun-4/'
 
 model_name = 'G_AB_300.pth'
+print('model used', model_name)
+
+test_GAN_AB_torch(folder_model, model_name, val_dataloader, 
+                  double_gan=False, type_of_input_A='pos+neg')
 
 
-
-test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='pos')
-test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='neg')
+# test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='pos')
+# test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='neg')
 test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='pos+neg')
-test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='pos')
-test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='neg')
-test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='pos+neg')
-test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='GAN(-nGAN+pGAN)')
+#test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='pos')
+# test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='neg')
+# test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='pos+neg')
+# test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='GAN(-nGAN+pGAN)')
 
+
+'''
+result using total text
+
+Single GAN
+ -ve A as input
+R 20.71  P 47.01  F 24.40 
+
+ -----------------
+Single GAN
++ve added to -ve
+R 44.75  P 46.33  F 41.22 
+
+ -----------------
+Using double GAN
+ +ve A as input
+R 26.51  P 46.60  F 28.94 
+
+ -----------------
+Using double GAN
+ -ve A as input
+R 20.70  P 47.79  F 25.26 
+
+ -----------------
+Using double GAN
++ve added to -ve
+R 42.86  P 46.53  F 40.60 
+
+ -----------------
+Using double GAN
+GAN(-nGAN+pGAN)
+R 40.24  P 47.77  F 39.53 
+
+
+'''
 
 
 
