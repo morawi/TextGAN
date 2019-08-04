@@ -77,34 +77,6 @@ def normalize_tensor_0_1(x):
     return normalised
 
 
-# pred and target are tensors here
-def F1_loss(pred, target, reduce= True, thresh_val = 0):   
-    epsilon = 1e-10 # epsilon used to prevent overflow
-    pred = torch.gt(pred, thresh_val).byte()
-    target = torch.gt(target, thresh_val).byte()
-    # N = torch.tensor(pred | target, dtype=torch.float32, requires_grad=True)  # logical
-    N = pred | target
-    Tp = pred & target
-    Fn = target - Tp # element-wise subtraction in pytorch 
-    Fp = pred - Tp     
-    Tn = N - (Tp | Fp | Fn) 
-    Tp = torch.sum(Tp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze() # summing over x,y, keeping the batch and the channel dim
-    Tn = torch.sum(Tn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
-    Fp = torch.sum(Fp, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
-    Fn = torch.sum(Fn, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()    
-        
-    F1 = 1 - 2*(Tp+epsilon)/(2*Tp+Fp+Fn - epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
-    
-    if reduce == True:        
-        F1 = F1.mean()
-    else:
-        F1 = F1.mean(dim=0) # else, return a measure for each channel
-    
-    return F1
-    
-#    accuracy = (Tp + Tn)/torch.sum(N, dim=(2,3), keepdim=True, dtype=torch.float32).squeeze()
-    F1.requires_grad_(True)
-    return F1 #, accuracy 
 
 # show_tensor(torch.sigmoid(alpha*pred + pred.mean()), show_img = True)
 #    show_tensor(torch.sigmoid(alpha*target + target.mean()) , show_img = True)
@@ -118,7 +90,7 @@ def tensor_to_grayscale(img):
     
  #    x= torch.sigmoid(alpha*(pred - beta)); show_tensor(x, show_img= True)
 '''Same as F1_loss above but it is performed using boolean algebra'''
-def F1_loss_torch(pred, target, alpha = 1E6):   # alpha 1E6 ensures hard thresholding
+def F1_loss_torch(pred, target, f1_inv=True, alpha = 1E6 ):   # alpha 1E6 ensures hard thresholding
     
     epsilon = 1e-10 # epsilon used to prevent overflow    
     pred = tensor_to_grayscale(pred) # using, pred[:,0,:,:], only the first channel gave slightly higher result 
@@ -136,20 +108,21 @@ def F1_loss_torch(pred, target, alpha = 1E6):   # alpha 1E6 ensures hard thresho
     Fn = torch.abs(target - Tp)
     Fp = torch.abs(pred - Tp)
     Tn = torch.abs(N - arithmetic_or(arithmetic_or(Tp, Fp), Fn) )
-    T_n = torch.sum(Tn, dtype=torch.float32)
+    T_n = torch.sum(Tn, dtype=torch.float32) # can be usd to calculate accuracy
     T_p = torch.sum(Tp, dtype=torch.float32)
     F_p = torch.sum(Fp, dtype=torch.float32)
-    F_n = torch.sum(Fn, dtype=torch.float32)
+    F_n = torch.sum(Fn, dtype=torch.float32)    
     
-    ''' to be used in optimization'''    
-    
-    # the minus sign (before epsilob) in the dominator will ensure that F1 is 3 when there is a zero division               
-    F1 = 2*T_p /( 2*T_p + F_n + F_p ) 
-    # F1 = 1 - 2*(T_p + epsilon)/(2*T_p + F_p + F_n - epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
+    if f1_inv: # to be used in optimization    
+        F1 = 1 - 2*(T_p + epsilon)/(2*T_p + F_p + F_n - epsilon) # epsilon = 0 #1e-10  # used to handle extreme values, like, division by zero
+       # the minus sign (before epsilon) in the dominator will ensure that F1 is 3 (high value) when there is a zero division, as the objetive is minimization               
+    else: 
+        F1 = 2*T_p /( 2*T_p + F_n + F_p ) 
     
     return F1
 
 def F1_loss_numpy(pred, target): 
+    epsilon = 1e-10
     pred = pred[:,:,0]  # using only the red channel
     target = target[:,:,0]
 
@@ -160,9 +133,13 @@ def F1_loss_numpy(pred, target):
     xx= np.logical_or(np.logical_or(Tp,Fp), Fn)
     Tn = np.bitwise_xor(N, xx)
 
-    precision = Tp.sum()/(Tp.sum()+ Fp.sum() )
+    precision = Tp.sum()/(Tp.sum()+ Fp.sum() +epsilon)
     recall = Tp.sum()/(Tp.sum()+ Fn.sum()) 
-    F1 = 2*Tp.sum() /( 2*Tp.sum()+ Fn.sum()+ Fp.sum() )
+    kk = 2*Tp.sum()+ Fn.sum()+ Fp.sum()
+    if kk==0:
+        return 0, 0, 0, 0
+    else:
+        F1 = 2*Tp.sum() / kk
     accuracy = (Tp.sum()+Tn.sum())/N.sum()
  
     return F1, accuracy, precision, recall
