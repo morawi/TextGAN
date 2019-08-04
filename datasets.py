@@ -65,10 +65,10 @@ class ImageDataset(Dataset):
         self.files_B = sorted(glob.glob(os.path.join(root, folder_name % mode) + '/*.*'))
         if (not self.files_A) and (not self.files_B):
             print('Error in loading data files: Check you have used the correct path and folder name')
-        sheer_tsfm = transforms.RandomAffine(degrees =(-20, 20), shear=(-30, 30) )  
+        sheer_tsfm = transforms.RandomAffine(degrees =(-20, 20), shear=(-20, 20) )  
         # perspective_tsf = transforms.RandomPerspective(distortion_scale=0.5, p=0.5, interpolation=3)
         self.random_sheer = transforms.Compose(
-                [transforms.RandomApply([sheer_tsfm], p = 0.3)], 
+                [transforms.RandomApply([sheer_tsfm], p = 0.15)], 
                 # [perspective_tsf]
                 ) # will only be used if cf.use_distortion_augmentor is True
         
@@ -80,12 +80,15 @@ class ImageDataset(Dataset):
         else:            
             item_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)]) 
             if self.data_mode=='_prime': 
-                item_B = self.random_sheer(item_B)                 
+                item_B = self.random_sheer(item_B)   
+                
+                
+                 
                         
 #        resize = True # used only for total_text
 #        if resize:
-#            item_A = item_A.resize([256, 256], Image.LANCZOS)
-#            item_B = item_B.resize([256, 256], Image.LANCZOS)
+#            item_A = item_A.resize([512, 512], Image.LANCZOS)
+#            item_B = item_B.resize([512, 512], Image.LANCZOS)
             
         if self.mode == 'train': # we don't want lime to be corrupted
             if np.random.rand() < self.p_RGB2BGR_augment: # will not run when p_RGB2BGR_augment=0
@@ -99,11 +102,14 @@ class ImageDataset(Dataset):
         if self.data_mode =='gt': item_B_neg = item_B # no need to invert gt(white text) here
         else: item_B_neg = item_B.point(lambda p: 255-p if p>0 else 0 ) # invert                                
         
+           
         # transformation
         item_A_neg = self.transform(PIL_invert(item_A)) # this will only be used in validation                
         item_B = self.transform(item_B)
         item_A = self.transform(item_A) 
         item_B_neg= self.transform(item_B_neg)
+#        if self.data_mode=='_prime': 
+#            item_B[item_B == item_B.min()] = item_B.min() - .2
         
         return {'A': item_A, 
                 'A_neg': item_A_neg,
