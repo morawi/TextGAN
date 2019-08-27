@@ -16,7 +16,7 @@ Download or clone the repositry, and off you go
 
 
 ## Running the tests
-To train the model, use [CycleGAN_text.py](https://github.com/morawi/TextGAN/blob/master/cyclegan_text.py)
+To train a model, use [CycleGAN_text.py](https://github.com/morawi/TextGAN/blob/master/cyclegan_text.py);
 To test the model, use [test_GAN_AB.py](https://github.com/morawi/TextGAN/blob/master/test_GAN_AB.py)
 
 
