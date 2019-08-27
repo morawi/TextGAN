@@ -33,7 +33,7 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 * [PyTorch-GAN](https://github.com/eriklindernoren/PyTorch-GAN)
 * Inspiration? The magic of GANs
-* [PyTorch] (http://pytorch.org)
+* [PyTorch](http://pytorch.org)
 
 ## Text Segmentation Samples
 ![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/0.png)
