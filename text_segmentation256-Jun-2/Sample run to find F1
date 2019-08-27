@@ -1,0 +1,41 @@
+model used G_AB_300.pth
+Using Torch based code to find F1
+
+ -----------------
+F 59.88 
+Using Numpy based code to find F1
+
+ -----------------
+Single GAN
+ +ve A as input
+R 40.94  P 46.00  F 40.43 
+
+ -----------------
+Single GAN
+ -ve A as input
+R 42.52  P 49.66  F 42.36 
+
+ -----------------
+Single GAN
++ve added to -ve
+R 78.21  P 51.52  F 59.05 
+
+ -----------------
+Using double GAN
+ +ve A as input
+R 40.09  P 46.97  F 40.42 
+
+ -----------------
+Using double GAN
+ -ve A as input
+R 43.16  P 50.11  F 43.40 
+
+ -----------------
+Using double GAN
++ve added to -ve
+R 77.37  P 50.55  F 57.84 
+
+ -----------------
+Using double GAN
+GAN(-nGAN+pGAN)
+R 66.98  P 59.45  F 59.37 

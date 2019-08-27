@@ -26,7 +26,7 @@ import time
 def test_GAN_AB_torch(folder_model, model_name, val_dataloader, 
                 double_gan=True, type_of_input_A='pos+neg'):  
     # type_of_input_A is one of these values  {'pos', 'neg', 'pos+neg', 'GAN(-nGAN+pGAN)' }
-    n_residual_blocks = 16 # this should be the same values used in training the G_AB model
+    n_residual_blocks = 9 # this should be the same values used in training the G_AB model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     G_AB = GeneratorResNet(res_blocks=n_residual_blocks)
     cuda = True if torch.cuda.is_available() else False
@@ -61,7 +61,7 @@ def test_GAN_AB_torch(folder_model, model_name, val_dataloader,
 def test_GAN_AB(folder_model, model_name, val_dataloader, threshold_value,
                 double_gan=True, type_of_input_A='pos+neg'):  
     # type_of_input_A is one of these values  {'pos', 'neg', 'pos+neg', 'GAN(-nGAN+pGAN)' }
-    n_residual_blocks = 16 # this should be the same values used in training the G_AB model
+    n_residual_blocks = 9 # this should be the same values used in training the G_AB model
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     G_AB = GeneratorResNet(res_blocks=n_residual_blocks)
     cuda = True if torch.cuda.is_available() else False
@@ -164,29 +164,30 @@ else:
 # folder_model = './saved_models/text_segmentation512-May-30/'
 #folder_model = './saved_models/aligned-text_segmentation256-may25/'
 # folder_model = './saved_models/unaligned-text_segmentation256-may26/'
-# folder_model ='./saved_models/text_segmentation256-Jun-2/'
+folder_model ='./saved_models/text_segmentation256-Jun-2/'
 # folder_model = './saved_models/total_text-Jun-4/'
 # folder_model ='./saved_models/text_segmentation256-Jun-10/' # usin new lambda set
 # folder_model ='./saved_models/text_segmentation256-Jun-11/'  # using the newest lambda set
 # folder_model ='./saved_models/text_segmentation256-Jun-12/'  # using the newest lambda set
 # folder_model ='./saved_models/text_segmentation256-Jun-30/'
 # folder_model ='./saved_models/text_segmentation256-May-27-Bprime-color/'
-folder_model = './saved_models/text_segmentation256-Jul-10/'
+# folder_model = './saved_models/text_segmentation256-Jul-10/'
 
 
-model_name = 'G_AB_500.pth'
+model_name = 'G_AB_300.pth'
 print('model used', model_name)
 
-#test_GAN_AB_torch(folder_model, model_name, val_dataloader, 
-#                  double_gan=False, type_of_input_A='pos+neg')
-
+print('Using Torch based code to find F1')
+test_GAN_AB_torch(folder_model, model_name, val_dataloader, 
+                  double_gan=False, type_of_input_A='pos+neg')
+print('Using Numpy based code to find F1')
 threshold_value = 10
-#test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='pos', threshold_value)
-# test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=False, type_of_input_A='neg',threshold_value)
+test_GAN_AB(folder_model, model_name, val_dataloader, threshold_value, double_gan=False, type_of_input_A='pos')
+test_GAN_AB(folder_model, model_name, val_dataloader, threshold_value, double_gan=False, type_of_input_A='neg')
 test_GAN_AB(folder_model, model_name, val_dataloader, threshold_value, double_gan=False, type_of_input_A='pos+neg')
-#test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='pos', threshold_value)
-#test_GAN_AB(folder_model, model_name, val_dataloader, double_gan=True, type_of_input_A='neg',threshold_value)
-# test_GAN_AB(folder_model, model_name, val_dataloader,threshold_value, double_gan=True, type_of_input_A='pos+neg')
+test_GAN_AB(folder_model, model_name, val_dataloader, threshold_value,  double_gan=True, type_of_input_A='pos')
+test_GAN_AB(folder_model, model_name, val_dataloader, threshold_value, double_gan=True, type_of_input_A='neg')
+test_GAN_AB(folder_model, model_name, val_dataloader,threshold_value, double_gan=True, type_of_input_A='pos+neg')
 test_GAN_AB(folder_model, model_name, val_dataloader, threshold_value, double_gan=True, type_of_input_A='GAN(-nGAN+pGAN)' )
 
 

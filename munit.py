@@ -56,7 +56,7 @@ opt.dataset_name = 'text_segmentation' + str(opt.img_width)
 
 opt.experiment_name = opt.dataset_name+'-'+ calendar.month_abbr[dt.month]+'-'+str(dt.day)
 
-opt.n_epochs= 200
+opt.n_epochs= 500
 opt.batch_size = 1
 opt.batch_test_size = 2
 opt.seed_value =  12345 # np.random.randint(1, 2**32-1) 
@@ -70,7 +70,9 @@ opt.p_RGB2BGR_augment = 0 # .25 # 0 means not using this augmentation
 opt.p_invert_augment =  0.33 # 0 means not using this augmentation
 opt.aligned = False
 
-opt.data_mode = '' # '_prime'  # will also do affine transform wiht prob 0.3 
+opt.n_epochs +=1
+
+opt.data_mode = '' # '_prime' # '' 
 ''' This is the background of GT one of four: 
         '': for black, 
         '_lime' for lime color, 
@@ -141,7 +143,7 @@ lambda_style    = 1
 lambda_cont     = 1
 
 
-lambda_cyc      = 1 # 0 : originally was  0
+lambda_cyc      = 0 # 1 # 0 : originally was  0
 
 
 
