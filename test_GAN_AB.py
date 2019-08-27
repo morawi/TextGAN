@@ -176,7 +176,7 @@ folder_model ='./saved_models/text_segmentation256-Jun-2/'
 
 model_name = 'G_AB_300.pth'
 print('model used', model_name)
-
+  
 print('Using Torch based code to find F1')
 test_GAN_AB_torch(folder_model, model_name, val_dataloader, 
                   double_gan=False, type_of_input_A='pos+neg')
