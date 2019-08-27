@@ -14,6 +14,8 @@ PIL
 
 Download or clone the repositry, and off you go
 
+## Datasets
+Place the training and testing samples in two separate folders calle tarin and test, respectively. Each folder should have the scene-text images in a folder calle A and the pixel-wise level annotations in another folder called B. The testing folder should have paired images to verify the performance via F1, but the training folder can have unpaired images. This is a simple and straightforward strategy, you just need to copy your images into these folders. The default name of the folder containing these train and test folders is called 'text_segmentation256', but can be changed by the user accordingly. The folder 'text_segmentation256' is placed outside the implementation, so make sure to correct the path according to your folder's path. 
 
 ## Running the tests
 To train a model, use [CycleGAN_text.py](https://github.com/morawi/TextGAN/blob/master/cyclegan_text.py);
