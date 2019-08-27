@@ -1,4 +1,3 @@
-# Project Title
 # TextGAN: Unsuperivsed Text Segmentation
 Text segmentation is a difficult problem because of the potentially vast variation in text and scene landscape. Moreover, systems that learn to perform text segmentation usually need non-trivial annotation efforts. This repositry conaints the implementation of unsupervised method to segment text at the pixel-level from scene images. The model we propose, which relies on generative adversarial neural networks, segments text intelligently; and does not therefore need to associate the scene image that contains the text to the ground-truth of the text. The main advantage is thus skipping the need to obtain the pixel-level annotation dataset, which is normally required in training powerful text segmentation models. The code is basesd on PyTorch 1.0.0 and might also work with >=0.4 versions.
 
