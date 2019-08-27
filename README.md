@@ -36,3 +36,12 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 ## Text Segmentation Samples
 ![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/0.png)
+![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/1.png)
+![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/2.png)
+![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/3.png)
+![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/4.png)
+![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/5.png)
+![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/6.png)
+
+
+
