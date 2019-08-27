@@ -35,4 +35,4 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 * [PyTorch] (http://pytorch.org)
 
 ## Text Segmentation Samples
-![] (https://github.com/morawi/TextGAN/blob/master/generated_samples/0.png)
+![samples] (https://github.com/morawi/TextGAN/blob/master/generated_samples/0.png)
