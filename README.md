@@ -7,33 +7,17 @@ Trained models can be found in [text_segmentation256-Jun-2](https://github.com/m
 
 ### Prerequisites
 
-Numpy
+Numpy; 
 PIL
 
 ### Installing
 
-Download or clone the repositry
-```
-Give the example
-```
+Download or clone the repositry, and off you go
 
-And repeat
-
-```
-until finished
-```
 
 ## Running the tests
 To train the model, use [CycleGAN_text.py](https://github.com/morawi/TextGAN/blob/master/cyclegan_text.py)
 To test the model, use [test_GAN_AB.py](https://github.com/morawi/TextGAN/blob/master/test_GAN_AB.py)
-
-### Break down into end to end tests
-
-Explain what these tests test and why
-
-```
-Give an example
-```
 
 
 ## Author
@@ -50,4 +34,5 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 * Inspiration? The magic of GANs
 * [PyTorch] (http://pytorch.org)
 
-
+## Text Segmentation Samples
+![] (https://github.com/morawi/TextGAN/blob/master/generated_samples/0.png)
