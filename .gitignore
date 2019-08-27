@@ -20,6 +20,7 @@ bin-release/
 # ignore 
 images/
 saved_models/
+text_segmentation256-Jun-2/
 __pycache__/
 
 
