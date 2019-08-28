@@ -1,10 +1,9 @@
 model used G_AB_300.pth
 Using Torch based code to find F1
+F 59.88 (+ve added to -ve;  single GAN used) 
 
- -----------------
-F 59.88 
+
 Using Numpy based code to find F1
-
  -----------------
 Single GAN
  +ve A as input
