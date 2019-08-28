@@ -36,7 +36,7 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 * [PyTorch](http://pytorch.org)
 
 ## Text Segmentation Samples via CycleGAN 
-Left to right depicts 1st: input, GAN_AB(input), -ve(input), GAN_AB(-ve(input))
+input,            GAN_AB(input),             -ve(input),              GAN_AB(-ve(input))
 ![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/0.png)
 ![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/1.png)
 ![Samples](https://github.com/morawi/TextGAN/blob/master/generated_samples/2.png)
